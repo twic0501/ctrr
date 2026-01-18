@@ -1,70 +1,73 @@
 // src/utils/graph-converter.ts
 
-export function getRepresentations(nodes: any[], edges: any[], isDirected: boolean) {
-  // 1. Sắp xếp Node ID để hiển thị đẹp (1, 2, 3...)
-  const nodeIds = nodes.map(n => String(n.id)).sort((a, b) => Number(a) - Number(b));
+export const getRepresentations = (nodes: any[], edges: any[], isDirected: boolean) => {
+    // 1. Sắp xếp danh sách đỉnh theo thứ tự tăng dần (1, 2, 3...)
+    // Để đảm bảo hiển thị đẹp mắt theo thứ tự
+    const sortedNodes = [...nodes].sort((a, b) => Number(a.id) - Number(b.id));
+    const nodeIds = sortedNodes.map(n => String(n.id));
   
-  const idToIndex: Record<string, number> = {};
-  nodeIds.forEach((id, idx) => idToIndex[id] = idx);
-  const n = nodeIds.length;
-
-  // --- A. MA TRẬN KỀ (Adjacency Matrix) ---
-  const matrix = Array(n).fill(null).map(() => Array(n).fill(0));
+    // 2. Tạo Map lưu danh sách kề
+    const adj: Record<string, string[]> = {};
+    nodeIds.forEach(id => adj[id] = []);
   
-  edges.forEach(e => {
-    const u = idToIndex[String(e.from)];
-    const v = idToIndex[String(e.to)];
-    const w = Number(e.weight !== undefined ? e.weight : (e.label || 1));
-    
-    if (u !== undefined && v !== undefined) {
-      matrix[u][v] = w; // Luôn có chiều xuôi
-      if (!isDirected) {
-        matrix[v][u] = w; // Nếu vô hướng thì có chiều ngược
-      }
-    }
-  });
-
-  // Tạo chuỗi hiển thị Ma trận
-  let matrixStr = "      " + nodeIds.map(id => id.padEnd(3)).join(" ") + "\n";
-  matrixStr += "      " + nodeIds.map(() => "---").join("-") + "\n";
-  
-  matrix.forEach((row, idx) => {
-    const rowStr = row.map(val => String(val).padEnd(3)).join(" ");
-    matrixStr += `${nodeIds[idx].padEnd(3)} | ${rowStr}\n`;
-  });
-
-  // --- B. DANH SÁCH KỀ (Adjacency List) ---
-  let adjListStr = "";
-  nodeIds.forEach(u => {
-    const neighbors: string[] = [];
+    // 3. Duyệt qua các cạnh để điền vào danh sách kề
     edges.forEach(e => {
-      const from = String(e.from);
-      const to = String(e.to);
-      const w = Number(e.weight !== undefined ? e.weight : (e.label || 1));
-      
-      // Chiều xuôi: u -> v
-      if (from === u) neighbors.push(`${to}(${w})`);
-      
-      // Chiều ngược: v -> u (Chỉ thêm nếu Vô hướng)
-      if (!isDirected && to === u) neighbors.push(`${from}(${w})`);
+        const u = String(e.from);
+        const v = String(e.to);
+        
+        // Nếu đỉnh tồn tại trong danh sách (đề phòng lỗi data rác)
+        if (adj[u]) adj[u].push(v);
+        
+        // Nếu vô hướng, thêm chiều ngược lại
+        if (!isDirected && adj[v]) {
+            adj[v].push(u);
+        }
     });
-    
-    neighbors.sort();
-    if (neighbors.length > 0) adjListStr += `${u} -> [ ${neighbors.join(", ")} ]\n`;
-    else adjListStr += `${u} -> []\n`;
-  });
-
-  // --- C. DANH SÁCH CẠNH (Edge List) ---
-  let edgeListStr = "";
-  if (edges.length === 0) {
-      edgeListStr = "(Chưa có cạnh nào)";
-  } else {
-      edges.forEach((e, idx) => {
-         const w = Number(e.weight !== undefined ? e.weight : (e.label || 1));
-         const arrow = isDirected ? "->" : "--"; // Đổi ký hiệu dựa trên hướng
-         edgeListStr += `${idx + 1}. (${e.from} ${arrow} ${e.to}) : w=${w}\n`;
-      });
-  }
-
-  return { matrixStr, adjListStr, edgeListStr };
-}
+  
+    // --- A. TẠO CHUỖI DANH SÁCH KỀ (ADJACENCY LIST) THEO MẪU ẢNH ---
+    // Định dạng: 1 -> { 2, 3, 4 }
+    let adjListStr = "";
+    nodeIds.forEach(id => {
+        // Lọc trùng và sắp xếp các hàng xóm tăng dần
+        const neighbors = [...new Set(adj[id])].sort((a, b) => Number(a) - Number(b));
+        
+        // Format giống trong ảnh bạn gửi: canh lề một chút cho đẹp
+        const neighborsStr = neighbors.length > 0 ? `{ ${neighbors.join(", ")} }` : "{ }";
+        adjListStr += `${id.padEnd(4)} ->  ${neighborsStr}\n`;
+    });
+  
+    // --- B. TẠO MA TRẬN KỀ (ADJACENCY MATRIX) ---
+    // Tạo header:     1  2  3  4
+    let matrixStr = "      " + nodeIds.map(id => id.padEnd(3)).join("") + "\n";
+    matrixStr += "      " + "-".repeat(nodeIds.length * 3) + "\n";
+  
+    nodeIds.forEach(rowId => {
+        let rowStr = `${rowId.padEnd(4)}| `;
+        nodeIds.forEach(colId => {
+            // Tìm cạnh nối row -> col
+            const edge = edges.find((e: any) => 
+                (String(e.from) === rowId && String(e.to) === colId) ||
+                (!isDirected && String(e.from) === colId && String(e.to) === rowId)
+            );
+            
+            // Nếu có cạnh thì lấy trọng số, không thì là 0
+            const val = edge ? (edge.weight || 1) : 0;
+            rowStr += `${val}`.padEnd(3);
+        });
+        matrixStr += rowStr + "\n";
+    });
+  
+    // --- C. TẠO DANH SÁCH CẠNH (EDGE LIST) ---
+    // Định dạng: (1, 2) - w: 4
+    let edgeListStr = "";
+    // Sắp xếp cạnh: theo điểm đầu tăng dần, rồi đến điểm cuối tăng dần
+    const sortedEdges = [...edges].sort((a, b) => {
+        return Number(a.from) - Number(b.from) || Number(a.to) - Number(b.to);
+    });
+  
+    sortedEdges.forEach(e => {
+        edgeListStr += `(${e.from}, ${e.to})    Weight: ${e.weight || 0}\n`;
+    });
+  
+    return { matrixStr, adjListStr, edgeListStr };
+  };

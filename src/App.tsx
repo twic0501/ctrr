@@ -27,6 +27,8 @@ const App: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const networkRef = useRef<Network | null>(null);
   const bottomLogRef = useRef<HTMLDivElement>(null); 
+  // Ref cho input file ẩn
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // --- DỮ LIỆU KHỞI TẠO ---
   const nodesRef = useRef<any>(new DataSet<any>([
@@ -66,7 +68,7 @@ const App: React.FC = () => {
   // --- LOGIC: CHUYỂN ĐỔI CHẾ ĐỘ (Mode Switch) ---
   const handleSwitchMode = (targetModeDirected: boolean) => {
       if (isDirected === targetModeDirected) return;
-      // QUAN TRỌNG: Xóa hết cạnh khi đổi chế độ để tránh lỗi logic đồ thị
+      // QUAN TRỌNG: Xóa hết cạnh khi đổi chế độ thủ công để tránh lỗi logic
       edgesRef.current.clear(); 
       Toastify({ 
           text: `Đã chuyển sang ${targetModeDirected ? "Có hướng" : "Vô hướng"} (Reset cạnh)`, 
@@ -76,6 +78,80 @@ const App: React.FC = () => {
       setIsDirected(targetModeDirected);
   };
 
+  // ==========================================
+  // --- TÍNH NĂNG MỚI: SAVE & LOAD JSON ---
+  // ==========================================
+  
+  // 1. Lưu file (Export JSON)
+  const handleSaveGraph = () => {
+      const dataToSave = {
+          nodes: nodesRef.current.get(), // Lấy toàn bộ nodes (kèm tọa độ x, y)
+          edges: edgesRef.current.get(), // Lấy toàn bộ edges (kèm trọng số)
+          isDirected: isDirected,        // Lưu chế độ hiện tại
+          timestamp: new Date().toISOString()
+      };
+
+      const jsonString = JSON.stringify(dataToSave, null, 2);
+      const blob = new Blob([jsonString], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      
+      // Tạo thẻ a ảo để kích hoạt download
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `graph_data_${Date.now()}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      Toastify({ text: "💾 Đã lưu file thành công!", backgroundColor: "#10b981" }).showToast();
+  };
+
+  // 2. Kích hoạt input file
+  const handleTriggerLoad = () => {
+      if(fileInputRef.current) fileInputRef.current.click();
+  };
+
+  // 3. Xử lý đọc file (Import JSON)
+  const handleLoadFile = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+          try {
+              const content = e.target?.result as string;
+              const parsedData = JSON.parse(content);
+
+              // Validate sơ bộ
+              if (!parsedData.nodes || !parsedData.edges) {
+                  throw new Error("File không đúng định dạng đồ thị!");
+              }
+
+              if (window.confirm("Bạn có chắc muốn tải file này? Đồ thị hiện tại sẽ bị ghi đè.")) {
+                  // Xóa đồ thị cũ
+                  nodesRef.current.clear();
+                  edgesRef.current.clear();
+
+                  // Cập nhật chế độ trước
+                  setIsDirected(!!parsedData.isDirected);
+
+                  // Thêm dữ liệu mới (setTimeout để đảm bảo render kịp)
+                  setTimeout(() => {
+                      nodesRef.current.add(parsedData.nodes);
+                      edgesRef.current.add(parsedData.edges);
+                      networkRef.current?.fit(); // Zoom vừa màn hình
+                      Toastify({ text: "📂 Đã tải đồ thị thành công!", backgroundColor: "#10b981" }).showToast();
+                  }, 100);
+              }
+          } catch (err) {
+              Toastify({ text: "❌ Lỗi đọc file: File không hợp lệ!", backgroundColor: "#ef4444" }).showToast();
+          }
+      };
+      reader.readAsText(file);
+      // Reset input để chọn lại file cùng tên vẫn chạy
+      event.target.value = ''; 
+  };
+
   // --- INIT VIS-NETWORK ---
   useEffect(() => {
     if (!containerRef.current) return;
@@ -83,7 +159,6 @@ const App: React.FC = () => {
       nodes: {
         shape: "circle", size: 26, borderWidth: 2,
         color: { background: "#ffffff", border: "#4f46e5", highlight: { background: "#e0e7ff", border: "#4338ca" } },
-        // [FIX 1] Removed 'bold: true' to fix TS2345 error
         font: { size: 16, color: "#4f46e5", align: 'center', face: 'Inter, sans-serif' },
         shadow: { enabled: true, color: "rgba(0,0,0,0.1)", size: 4, x: 1, y: 1 },
       },
@@ -141,7 +216,6 @@ const App: React.FC = () => {
           networkRef.current.setOptions({ 
             edges: { 
                 arrows: { to: { enabled: isDirected } }, 
-                // [FIX 2] Added 'roundness: 0.1' to fix TS2322 error
                 smooth: { enabled: true, type: isDirected ? 'curvedCW' : 'continuous', roundness: 0.1 } 
             } 
         });
@@ -212,11 +286,8 @@ const App: React.FC = () => {
 
     allEdges.forEach((e: any) => {
       const u = String(e.from), v = String(e.to), w = Number(e.weight || 0);
-      // AdjList cho thuật toán tìm đường
       if(adjList[u]) adjList[u].push([v, w]);
-      // Nếu vô hướng thì thêm chiều ngược lại vào AdjList logic
       if(!isDirected && adjList[v]) adjList[v].push([u, w]);
-      // Edge List cho Kruskal
       edgesArr.push({ from: u, to: v, weight: w, id: e.id });
     });
 
@@ -235,7 +306,6 @@ const App: React.FC = () => {
     const mstStyle = { node: { background: "#10b981", border: "#059669" }, edge: { color: "#10b981", width: 5 } };
     const flowStyle = { edge: { color: "#ef4444", width: 4 } };
 
-    // Helper: Tìm và tô màu cạnh
     const highlightEdge = async (u: string, v: string, style: any) => {
         const edge = allEdges.find((e: any) => 
             (String(e.from) === u && String(e.to) === v) || 
@@ -251,23 +321,21 @@ const App: React.FC = () => {
     // ALGORITHM EXECUTION BLOCK
     // ================================
 
-    // 1. BFS & DFS (Chế độ DUYỆT - Traversal)
     if (selectedAlgo === 'bfs' || selectedAlgo === 'dfs') {
         if(!sNode) { Toastify({ text: "Chọn điểm bắt đầu!", backgroundColor: "#f59e0b" }).showToast(); setIsRunning(false); return; }
         
         let res: any;
         if (selectedAlgo === 'bfs') {
-             res = bfs(adjList, sNode); // Chỉ cần Start Node
+             res = bfs(adjList, sNode);
              setResultLog(<div>🌊 <b>BFS Traversal</b> (Lan truyền)</div>);
         } else {
-             res = dfs(adjList, sNode); // Chỉ cần Start Node
+             res = dfs(adjList, sNode);
              setResultLog(<div>⛏️ <b>DFS Traversal</b> (Đào sâu)</div>);
         }
 
         if (res.error) {
             setResultLog(<span className="error-text">{res.error}</span>);
         } else {
-            // Animation: Hiển thị cây duyệt
             for (const nodeId of res.visitedOrder) {
                 nodesRef.current.update({ id: nodeId, ...scanStyle.node });
                 const parentId = res.previous[nodeId];
@@ -278,7 +346,6 @@ const App: React.FC = () => {
         }
     }
 
-    // 2. DIJKSTRA (Tìm đường ngắn nhất)
     else if (selectedAlgo === 'dijkstra') {
         if(!sNode || !eNode) { Toastify({ text: "Nhập Start & End!", backgroundColor: "#f59e0b" }).showToast(); setIsRunning(false); return; }
         
@@ -286,12 +353,10 @@ const App: React.FC = () => {
         if (res.error) setResultLog(<span className="error-text">{res.error}</span>);
         else {
             setResultLog(<div>🚀 Dijkstra Scanning...</div>);
-            // Quá trình quét (Scanning)
             for (const n of res.visitedOrder) { 
                 nodesRef.current.update({ id: n, background: "#e0e7ff", border: "#a5b4fc" }); 
                 await sleep(50); 
             }
-            // Vẽ đường đi (Path)
             if (res.path.length > 0) {
                 for (let i = 0; i < res.path.length; i++) {
                     const u = res.path[i];
@@ -303,7 +368,6 @@ const App: React.FC = () => {
         }
     }
     
-    // 3. MST (PRIM / KRUSKAL) - Chỉ Vô Hướng
     else if (selectedAlgo === 'prim' || selectedAlgo === 'kruskal') {
         if (isDirected) {
             Toastify({ text: "⛔ MST chỉ dùng cho đồ thị VÔ HƯỚNG!", backgroundColor: "#ef4444", duration: 3000 }).showToast();
@@ -326,7 +390,6 @@ const App: React.FC = () => {
         setResultLog(<div>✅ <b>MST Done</b><br/>Total Cost: <b>{totalCost}</b></div>);
     }
 
-    // 4. CHECK BIPARTITE - Chỉ Vô Hướng
     else if (selectedAlgo === 'bipartite') {
         if (isDirected) {
             Toastify({ text: "⚠️ Thường dùng cho đồ thị VÔ HƯỚNG!", backgroundColor: "#f59e0b" }).showToast();
@@ -335,8 +398,8 @@ const App: React.FC = () => {
         setResultLog("🔍 Checking Bipartite..."); await sleep(500);
         const res = checkBipartite(adjList);
         if (res.isBipartite) {
-            res.setA.forEach(id => nodesRef.current.update({ id, color: { background: "#fca5a5", border: "#dc2626" } })); // Red set
-            res.setB.forEach(id => nodesRef.current.update({ id, color: { background: "#93c5fd", border: "#2563eb" } })); // Blue set
+            res.setA.forEach(id => nodesRef.current.update({ id, color: { background: "#fca5a5", border: "#dc2626" } })); 
+            res.setB.forEach(id => nodesRef.current.update({ id, color: { background: "#93c5fd", border: "#2563eb" } })); 
             setResultLog(<div>✅ <b>Đồ thị 2 phía</b> (Bipartite)</div>);
         } else {
             setResultLog(<div className="error-text">❌ Không phải 2 phía<br/>Conflict: {res.conflictNode}</div>);
@@ -344,13 +407,11 @@ const App: React.FC = () => {
         }
     }
 
-    // 5. EULER - Tự động tìm Start
     else if (selectedAlgo === 'fleury' || selectedAlgo === 'hierholzer') {
         const res = selectedAlgo === 'fleury' ? fleury(adjList, isDirected) : hierholzer(adjList, isDirected);
         if (res.error) setResultLog(<span className="error-text">{res.error}</span>);
         else {
             setResultLog(<div>🚀 Euler Path ({res.type})...</div>);
-            // [FIX 3] Added default array fallback to fix TS18048 error
             const path = res.path || []; 
             for(let i=0; i<path.length; i++) {
                 nodesRef.current.update({ id: path[i], ...pathStyle.node }); await sleep(300);
@@ -360,7 +421,6 @@ const App: React.FC = () => {
         }
     }
 
-    // 6. MAX FLOW (FORD-FULKERSON) - Chỉ Có Hướng
     else if (selectedAlgo === 'fordfulkerson') {
          if (!isDirected) { Toastify({ text: "⛔ Max Flow cần đồ thị CÓ HƯỚNG!", backgroundColor: "#ef4444" }).showToast(); setIsRunning(false); return; }
          if(!sNode || !eNode) { Toastify({ text: "Nhập Start & End!", backgroundColor: "#f59e0b" }).showToast(); setIsRunning(false); return; }
@@ -375,7 +435,7 @@ const App: React.FC = () => {
                     const capacity = visEdge.weight || 0;
                     edgesRef.current.update({ 
                         id: visEdge.id, 
-                        label: `${fe.flow}/${capacity}`, // Label: Flow/Cap
+                        label: `${fe.flow}/${capacity}`, 
                         ...flowStyle.edge 
                     });
                     await sleep(200);
@@ -408,14 +468,11 @@ const App: React.FC = () => {
              <option value="hierholzer">Hierholzer (Euler)</option>
           </select>
 
-          {/* INPUT AREA: HIỂN THỊ CÓ ĐIỀU KIỆN */}
+          {/* INPUT AREA */}
           <div className="input-row">
-             {/* Chỉ hiện Start Node cho các thuật toán cần điểm bắt đầu thủ công */}
              {['dijkstra','bfs','dfs','fordfulkerson'].includes(selectedAlgo) && (
                 <input type="text" placeholder="Start" value={startNode} onChange={e => setStartNode(e.target.value)} title="Start Node"/>
              )}
-
-             {/* Chỉ hiện End Node cho tìm đường và luồng */}
              {['dijkstra','fordfulkerson'].includes(selectedAlgo) && (
                 <>
                     <i className="fa-solid fa-arrow-right" style={{color: '#94a3b8', margin: '0 5px'}}></i>
@@ -424,7 +481,6 @@ const App: React.FC = () => {
              )}
           </div>
 
-          {/* Thông báo nhỏ cho Euler */}
           {['fleury', 'hierholzer'].includes(selectedAlgo) && (
             <div style={{fontSize: '0.8rem', color: '#64748b', textAlign: 'center', marginBottom: 10, fontStyle: 'italic'}}>
                 *Tự động tìm điểm bắt đầu
@@ -437,6 +493,19 @@ const App: React.FC = () => {
           
           <button className="btn-secondary" onClick={handleShowRep}><i className="fa-solid fa-code"></i> Code Representation</button>
           <button className="btn-secondary" onClick={handleClear} disabled={isRunning}>Reset Graph</button>
+          
+          {/* --- TÍNH NĂNG MỚI: SAVE & LOAD --- */}
+          <div style={{marginTop: 15, borderTop: '1px solid #e2e8f0', paddingTop: 10}}>
+             <button className="btn-secondary" onClick={handleSaveGraph} style={{background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0'}}>
+                 <i className="fa-solid fa-download"></i> Lưu File (JSON)
+             </button>
+             <button className="btn-secondary" onClick={handleTriggerLoad} style={{marginTop: 5}}>
+                 <i className="fa-solid fa-upload"></i> Mở File (JSON)
+             </button>
+             {/* Input file ẩn */}
+             <input type="file" ref={fileInputRef} onChange={handleLoadFile} style={{display: 'none'}} accept=".json"/>
+          </div>
+
         </div>
       </aside>
 
@@ -445,14 +514,12 @@ const App: React.FC = () => {
               <div id="graph-container" ref={containerRef}></div>
               
               <div className="floating-toolbar">
-                 {/* MODE SWITCHER */}
                  <div className="mode-switch-container">
                     <div className="mode-bg-slider" style={{ transform: isDirected ? 'translateX(100%)' : 'translateX(0)' }}></div>
                     <div className={`mode-option ${!isDirected ? 'active' : ''}`} onClick={() => handleSwitchMode(false)}>Vô hướng</div>
                     <div className={`mode-option ${isDirected ? 'active' : ''}`} onClick={() => handleSwitchMode(true)}>Có hướng</div>
                  </div>
                  <div className="toolbar-divider"></div>
-                 {/* TOOL BUTTONS */}
                  <div className="tools-group">
                     <button className={`tool-btn ${activeTool === 'cursor' ? 'active' : ''}`} onClick={() => setActiveTool('cursor')} title="Di chuyển"><i className="fa-solid fa-arrow-pointer"></i></button>
                     <button className={`tool-btn ${activeTool === 'add-node' ? 'active' : ''}`} onClick={() => setActiveTool('add-node')} title="Thêm Đỉnh"><i className="fa-solid fa-plus"></i></button>
@@ -468,7 +535,6 @@ const App: React.FC = () => {
           </div>
       </div>
       
-      {/* MODAL EDIT WEIGHT */}
       {modalOpen && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -482,7 +548,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL CODE REPRESENTATION */}
       {repModalOpen && (
         <div className="modal-overlay" onClick={() => setRepModalOpen(false)}>
            <div className="modal-content" style={{width: 600, textAlign: 'left'}} onClick={e => e.stopPropagation()}>
