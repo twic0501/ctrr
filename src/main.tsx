@@ -1,11 +1,11 @@
 // src/main.tsx
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App.tsx' // Đảm bảo dòng này trỏ đúng vào App.tsx
-import './index.css' // Nếu bạn không dùng css thì xóa dòng này đi cũng được
+import Push from './Push.tsx' // <-- Đổi dòng này (App -> Main)
+import './index.css'
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <App />
+    <Push />
   </React.StrictMode>,
 )

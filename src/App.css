@@ -134,3 +134,175 @@ body, html, #root {
 .modal-actions { display: flex; flex-direction: column; gap: 8px; justify-content: center; margin-top: 10px; }
 .modal-row { display: flex; gap: 10px; }
 .modal-row button { flex: 1; }
+/* Chế độ 3D cho bản đồ */
+.map-3d-view .leaflet-map-pane {
+    transform: rotateX(45deg) scale(1.2); /* Nghiêng 45 độ */
+    transform-origin: center bottom; /* Nghiêng từ đáy */
+    transition: transform 1s ease-in-out; /* Hiệu ứng mượt */
+}
+
+/* Khi nghiêng map, các Marker (Icon) phải đứng thẳng lại */
+.map-3d-view .leaflet-marker-icon {
+    transform: rotateX(-45deg) !important; /* Xoay ngược lại để icon đứng vuông góc */
+    transform-origin: bottom center;
+    filter: drop-shadow(0 10px 5px rgba(0,0,0,0.4)); /* Bóng đổ cho cảm giác nổi 3D */
+    transition: all 1s;
+}
+
+/* Hiệu ứng đường dây điện (cho Prim/Kruskal) */
+.electric-line {
+    stroke-dasharray: 10, 10; /* Nét đứt */
+    animation: dash 5s linear infinite; /* Chạy chạy */
+}
+
+@keyframes dash {
+    to { stroke-dashoffset: -100; }
+}
+/* src/App.css */
+
+/* 1. ICON ĐIỂM (LOCATION CÓ CHỮ) */
+.custom-pin-icon {
+    background: transparent;
+    border: none;
+}
+.pin-content {
+    position: relative;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #ef4444; /* Màu đỏ mặc định */
+    font-size: 40px;
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3));
+    transition: transform 0.2s;
+}
+.pin-content:hover {
+    transform: translateY(-5px) scale(1.1);
+}
+.pin-label {
+    position: absolute;
+    top: 40%; /* Căn chỉnh chữ vào giữa bụng giọt nước */
+    left: 50%;
+    transform: translate(-50%, -50%);
+    color: white;
+    font-size: 14px;
+    font-weight: bold;
+    font-family: Arial, sans-serif;
+}
+
+/* 2. HIỆU ỨNG NEON CHO DÂY ĐIỆN */
+.neon-line {
+    stroke: #fbbf24; /* Màu vàng sáng */
+    stroke-width: 6;
+    stroke-linecap: round;
+    /* Tạo hiệu ứng phát sáng rực rỡ */
+    filter: drop-shadow(0 0 5px #f59e0b) drop-shadow(0 0 10px #fbbf24);
+    stroke-dasharray: 15, 15;
+    animation: neon-flow 1s linear infinite;
+    z-index: 9999; /* Đè lên mọi thứ */
+}
+
+@keyframes neon-flow {
+    to { stroke-dashoffset: -30; }
+}
+
+/* 3. HIỆU ỨNG ĐƯỜNG ĐI DIJKSTRA/EULER */
+.path-line {
+    stroke: #ef4444;
+    stroke-width: 8;
+    stroke-linecap: round;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+.input-group {
+    margin-bottom: 12px;
+}
+.input-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #475569;
+    margin-bottom: 4px;
+    display: block;
+}
+.input-box-wrapper {
+    display: flex;
+    align-items: center;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    padding: 8px 10px;
+    transition: all 0.2s;
+}
+.input-box-wrapper:focus-within {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+.input-box-icon {
+    margin-right: 8px;
+    font-size: 1.1rem;
+}
+.input-control {
+    border: none;
+    outline: none;
+    width: 100%;
+    font-size: 0.95rem;
+    color: #1e293b;
+    background: transparent;
+    font-weight: 500;
+}
+.btn-clear-input {
+    background: transparent;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    font-size: 0.9rem;
+    padding: 2px;
+}
+.btn-clear-input:hover {
+    color: #ef4444;
+}
+
+/* NÚT CHẠY TO ĐÙNG */
+.btn-run-big {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    color: white;
+    font-weight: bold;
+    font-size: 1rem;
+    cursor: pointer;
+    box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2);
+    transition: transform 0.1s;
+    margin-top: 10px;
+}
+.btn-run-big:active {
+    transform: scale(0.98);
+}
+.btn-run-big:disabled {
+    background: #cbd5e1;
+    cursor: not-allowed;
+    box-shadow: none;
+}
+/* NÚT DỪNG / XÓA KẾT QUẢ */
+.btn-stop {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #fca5a5;
+    border-radius: 8px;
+    background: #fef2f2;
+    color: #dc2626;
+    font-weight: bold;
+    font-size: 0.9rem;
+    cursor: pointer;
+    margin-top: 10px;
+    transition: all 0.2s;
+}
+.btn-stop:hover {
+    background: #fee2e2;
+    border-color: #ef4444;
+}
+.btn-stop:active {
+    transform: scale(0.98);
+}
