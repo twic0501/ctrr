@@ -306,3 +306,46 @@ body, html, #root {
 .btn-stop:active {
     transform: scale(0.98);
 }
+.log-container {
+    background: #1e293b; /* Màu nền tối */
+    border-radius: 8px;
+    padding: 10px;
+    margin-top: auto; /* Đẩy xuống đáy */
+    height: 150px; /* Chiều cao cố định */
+    overflow-y: auto; /* Cho phép cuộn */
+    border: 1px solid #334155;
+    font-family: 'Consolas', 'Monaco', monospace; /* Font chữ code */
+    font-size: 0.85rem;
+    color: #cbd5e1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* Từng dòng log */
+.log-step {
+    border-bottom: 1px dashed #334155;
+    padding-bottom: 4px;
+    line-height: 1.4;
+}
+.log-step:last-child {
+    border-bottom: none;
+}
+
+/* Icon đầu dòng log */
+.log-icon {
+    margin-right: 8px;
+    display: inline-block;
+}
+
+/* Scrollbar đẹp cho khung log */
+.log-container::-webkit-scrollbar {
+    width: 6px;
+}
+.log-container::-webkit-scrollbar-track {
+    background: #0f172a;
+}
+.log-container::-webkit-scrollbar-thumb {
+    background: #475569;
+    border-radius: 3px;
+}

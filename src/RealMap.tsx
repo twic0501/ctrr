@@ -71,7 +71,7 @@ const MovingVehicle = ({ routeCoords, icon }: { routeCoords: any[], icon: any })
         return () => clearInterval(interval);
     }, [routeCoords]);
     if (!pos) return null;
-    return <Marker position={pos} icon={icon} zIndexOffset={9999} interactive={false} />; // Xe không chặn click
+    return <Marker position={pos} icon={icon} zIndexOffset={9999} interactive={false} />;
 };
 
 interface RealMapProps { onBack: () => void; }
@@ -90,14 +90,19 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
     const [selectedAlgo, setSelectedAlgo] = useState<AlgoType>('dijkstra');
 
     // VISUALS
-    const [log, setLog] = useState("Sẵn sàng! Hãy thêm các điểm lên bản đồ.");
+    const [steps, setSteps] = useState<string[]>(["Sẵn sàng! Hãy thêm các điểm lên bản đồ."]); // Thay log đơn giản bằng mảng steps
     const [path, setPath] = useState<string[]>([]);
     const [highlightEdges, setHighlightEdges] = useState<any[]>([]);
     const [vehiclePath, setVehiclePath] = useState<any[]>([]);
     const [visitedNodes, setVisitedNodes] = useState<string[]>([]);
     const [nodeColors, setNodeColors] = useState<Record<string, string>>({});
 
-    // Check Algo Type
+    // Ref cho ô log để tự scroll xuống dưới
+    const logContainerRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        if (logContainerRef.current) logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
+    }, [steps]);
+
     const isTwoPointsAlgo = ['dijkstra', 'fordfulkerson'].includes(selectedAlgo);
 
     // --- MAP EVENTS ---
@@ -124,13 +129,13 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
                 const n1 = nodes.find(n => n.id === selectedNodeId);
                 const n2 = nodes.find(n => n.id === id);
                 if (n1 && n2) {
-                    setLog("⏳ Đang tìm đường thực tế...");
+                    addLog("⏳ Đang tìm đường thực tế từ OSRM...");
                     const data = await fetchRealRoute(n1, n2);
                     if (data) {
                         const exists = edges.some(e => (e.from===n1.id && e.to===n2.id) || (e.from===n2.id && e.to===n1.id));
                         if(!exists) {
                             setEdges([...edges, { from: n1.id, to: n2.id, weight: data.distance, label: `${data.distance} km`, geometry: data.geometry }]);
-                            setLog("✅ Đã nối đường!");
+                            addLog(`✅ Đã nối đường: ${n1.label} ➔ ${n2.label} (${data.distance} km)`);
                         }
                     }
                 }
@@ -144,19 +149,12 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
             if(endNodeId === id) setEndNodeId('');
         }
         else {
-            // Chế độ Cursor: Chọn Start/End
             if (isTwoPointsAlgo) {
                 if (!startNodeId) setStartNodeId(id);
-                else if (!endNodeId && id !== startNodeId) {
-                    setEndNodeId(id);
-                    // Không Auto Run ở đây để tránh rối, user bấm nút chạy
-                } else {
-                    setStartNodeId(id); setEndNodeId('');
-                    handleResetResults(); // Chọn lại thì xóa kết quả cũ đi
-                }
+                else if (!endNodeId && id !== startNodeId) setEndNodeId(id);
+                else { setStartNodeId(id); setEndNodeId(''); handleResetResults(); }
             } else {
-                setStartNodeId(id); setEndNodeId('');
-                handleResetResults();
+                setStartNodeId(id); setEndNodeId(''); handleResetResults();
             }
         }
     };
@@ -170,14 +168,17 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
         }
     };
 
-    // --- HÀM RESET / DỪNG (MỚI) ---
+    // --- HELPER: THÊM DÒNG LOG ---
+    const addLog = (msg: string) => {
+        setSteps(prev => [...prev, msg]);
+    };
+
+    // --- HELPER: LẤY TÊN NODE (A, B, C) ---
+    const getNodeName = (id: string) => nodes.find(n => n.id === id)?.label || id;
+
     const handleResetResults = () => {
-        setPath([]);
-        setHighlightEdges([]);
-        setVehiclePath([]);
-        setVisitedNodes([]);
-        setNodeColors({});
-        setLog("Đã xóa kết quả mô phỏng.");
+        setPath([]); setHighlightEdges([]); setVehiclePath([]); setVisitedNodes([]); setNodeColors({});
+        setSteps(["Đã xóa kết quả. Sẵn sàng chạy mới."]);
     };
 
     // --- ALGORITHM RUNNER ---
@@ -186,15 +187,21 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
         const end = eId || endNodeId;
 
         if (isTwoPointsAlgo && (!start || !end)) {
-            Toastify({ text: "Vui lòng chọn đủ Điểm Đầu và Điểm Cuối!", backgroundColor: "#ef4444" }).showToast();
+            Toastify({ text: "Vui lòng chọn đủ Start & End!", backgroundColor: "#ef4444" }).showToast();
             return;
         }
         if (!isTwoPointsAlgo && !start && selectedAlgo !== 'kruskal' && selectedAlgo !== 'bipartite') {
-             Toastify({ text: "Vui lòng chọn Điểm Bắt Đầu!", backgroundColor: "#ef4444" }).showToast();
-             return;
+             Toastify({ text: "Vui lòng chọn Start!", backgroundColor: "#ef4444" }).showToast(); return;
         }
 
-        handleResetResults(); // Clear cũ trước khi chạy mới
+        handleResetResults();
+        
+        // Tạo log mở đầu
+        const sLabel = getNodeName(start);
+        const eLabel = getNodeName(end);
+        setSteps([`🚀 BẮT ĐẦU CHẠY: ${selectedAlgo.toUpperCase()}`]);
+        if (start) addLog(`📍 Điểm bắt đầu: ${sLabel}`);
+        if (end) addLog(`🏁 Điểm kết thúc: ${eLabel}`);
 
         // Build Graph
         const adjList: any = {};
@@ -205,48 +212,104 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
             else adjList[e.to].push([e.from, e.weight]); 
         });
 
-        // EXECUTE
+        // --- EXECUTE & GENERATE DETAILED LOGS ---
+        
         if (selectedAlgo === 'dijkstra') {
             const res = dijkstra(adjList, start, end);
             if (res.path?.length) {
                 setPath(res.path);
-                setLog(`🚑 Lộ trình: ${res.cost} km`);
                 reconstructGeometryPath(res.path);
-            } else setLog("❌ Không tìm thấy đường!");
+                
+                // LOG CHI TIẾT DIJKSTRA
+                addLog("--- CHI TIẾT ĐƯỜNG ĐI ---");
+                let currentDist = 0;
+                for(let i=0; i<res.path.length-1; i++) {
+                    const u = res.path[i];
+                    const v = res.path[i+1];
+                    const edge = edges.find(e => (e.from===u && e.to===v) || (e.from===v && e.to===u));
+                    const dist = edge?.weight || 0;
+                    currentDist += dist;
+                    addLog(`⬇️ Từ ${getNodeName(u)} đến ${getNodeName(v)}: ${dist} km (Tổng: ${currentDist.toFixed(2)} km)`);
+                }
+                addLog(`✅ ĐÃ ĐẾN ĐÍCH! Tổng quãng đường: ${res.cost} km`);
+            } else addLog("❌ Không tìm thấy đường đi giữa 2 điểm này!");
         }
+        
         else if (selectedAlgo === 'prim') {
             const res = prim(adjList);
             setHighlightEdges(res.mstEdges);
-            setLog(`⚡ Lưới điện Prim đã bật!`);
+            
+            // LOG CHI TIẾT PRIM
+            addLog("--- QUÁ TRÌNH NỐI CÁP ---");
+            res.mstEdges.forEach((e: any, idx: number) => {
+                addLog(`⚡ Bước ${idx+1}: Nối ${getNodeName(e.from)} <-> ${getNodeName(e.to)} (Dây: ${e.weight} km)`);
+            });
+            addLog(`✅ HOÀN THÀNH LƯỚI ĐIỆN! Tổng dây cáp: ${res.cost} km`);
         }
+
         else if (selectedAlgo === 'kruskal') {
             const res = kruskal(nodes.map(n=>n.id), edges.map(e=>({from:e.from, to:e.to, weight:e.weight})));
             setHighlightEdges(res.mstEdges);
-            setLog(`⚡ Lưới điện Kruskal đã bật!`);
+            
+            // LOG CHI TIẾT KRUSKAL
+            addLog("--- QUÁ TRÌNH GỘP CỤM ---");
+            res.mstEdges.forEach((e: any, idx: number) => {
+                addLog(`🔗 Bước ${idx+1}: Chọn cạnh rẻ nhất ${getNodeName(e.from)}-${getNodeName(e.to)} (${e.weight} km)`);
+            });
+            addLog(`✅ HOÀN THÀNH TOÀN CỤC! Tổng chi phí: ${res.cost}`);
         }
+
         else if (selectedAlgo === 'bfs' || selectedAlgo === 'dfs') {
             const res = selectedAlgo === 'bfs' ? bfs(adjList, start) : dfs(adjList, start);
-            setLog(`${selectedAlgo.toUpperCase()} duyệt ${res.visitedOrder.length} điểm`);
-            for(const id of res.visitedOrder) {
+            
+            // LOG DUYỆT
+            addLog(`--- THỨ TỰ DUYỆT (${res.visitedOrder.length} ĐIỂM) ---`);
+            const orderNames = res.visitedOrder.map((id:string) => getNodeName(id)).join(" ➔ ");
+            addLog(orderNames);
+
+            // Animation & Log từng bước
+            for(let i=0; i<res.visitedOrder.length; i++) {
+                const id = res.visitedOrder[i];
                 setVisitedNodes(prev => [...prev, id]);
+                if (i > 0) addLog(`🔍 Đã lan truyền đến: ${getNodeName(id)}`);
                 await new Promise(r => setTimeout(r, 300));
             }
+            addLog("✅ Kết thúc quá trình duyệt!");
         }
+
         else if (selectedAlgo === 'fordfulkerson') {
             const res = fordFulkerson(adjList, start, end);
             const flowEdges: any[] = [];
-            res.flowEdges.forEach((fe:any) => { if(fe.flow>0) flowEdges.push({from:fe.from, to:fe.to, label:`${fe.flow}/${fe.capacity}`}); });
+            
+            addLog("--- CHI TIẾT DÒNG CHẢY ---");
+            res.flowEdges.forEach((fe:any) => { 
+                if(fe.flow>0) {
+                    flowEdges.push({from:fe.from, to:fe.to, label:`${fe.flow}/${fe.capacity}`});
+                    addLog(`🌊 Ống ${getNodeName(fe.from)} -> ${getNodeName(fe.to)}: Đang chảy ${fe.flow} (Max ${fe.capacity})`);
+                }
+            });
             setHighlightEdges(flowEdges);
-            setLog(`🌊 Max Flow: ${res.maxFlow}`);
+            addLog(`✅ TỔNG LƯU LƯỢNG TỐI ĐA: ${res.maxFlow}`);
+            
+            // Demo xe chạy
+            if(res.maxFlow > 0) {
+                 const simpleRes = dijkstra(adjList, start, end);
+                 if(simpleRes.path) reconstructGeometryPath(simpleRes.path);
+            }
         }
+
         else if (selectedAlgo.includes('euler')) {
              const res = selectedAlgo === 'fleury' ? fleury(adjList, false) : hierholzer(adjList, false);
              if (res.path) {
                  setPath(res.path);
-                 setLog(`🚛 Xe rác đang chạy!`);
                  reconstructGeometryPath(res.path);
-             } else setLog("⚠️ Không có chu trình Euler!");
+                 
+                 addLog("--- LỘ TRÌNH XE RÁC ---");
+                 addLog(`🚛 Lộ trình: ${res.path.map((id:string) => getNodeName(id)).join(" -> ")}`);
+                 addLog("✅ Đã quét sạch tất cả các con đường!");
+             } else addLog("⚠️ Thất bại: Đồ thị không thỏa mãn điều kiện Euler (Bậc lẻ)!");
         }
+
         else if (selectedAlgo === 'bipartite') {
              const res = checkBipartite(adjList);
              if (res.isBipartite) {
@@ -254,10 +317,12 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
                  res.setA.forEach((id:string) => colors[id] = 'red');
                  res.setB.forEach((id:string) => colors[id] = 'blue');
                  setNodeColors(colors);
-                 setLog("✅ Chia phe thành công!");
+                 addLog("✅ Đồ thị 2 phía: TÁCH ĐƯỢC!");
+                 addLog(`🔴 Phe Đỏ: ${res.setA.map((id:string) => getNodeName(id)).join(", ")}`);
+                 addLog(`🔵 Phe Xanh: ${res.setB.map((id:string) => getNodeName(id)).join(", ")}`);
              } else {
                  if(res.conflictNode) setNodeColors({ [res.conflictNode]: 'violet' });
-                 setLog("❌ Xung đột phe phái!");
+                 addLog(`❌ KHÔNG TÁCH ĐƯỢC! Xung đột tại điểm ${getNodeName(res.conflictNode)}`);
              }
         }
     };
@@ -293,7 +358,7 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
                 </button>
                 <h2 style={{color: '#2563eb', margin: '0 0 15px 0'}}>🗺️ Ứng Dụng Thực Tế</h2>
                 
-                <div style={{marginBottom: 20}}>
+                <div style={{marginBottom: 10}}>
                     <label className="input-label">Chọn Nhiệm vụ:</label>
                     <select value={selectedAlgo} onChange={(e) => { setSelectedAlgo(e.target.value as AlgoType); setStartNodeId(''); setEndNodeId(''); handleResetResults(); }} style={{width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', background: 'white', cursor: 'pointer'}}>
                         <optgroup label="Tìm đường">
@@ -314,9 +379,9 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
                     </select>
                 </div>
 
-                <div style={{background: '#f8fafc', padding: '15px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '20px'}}>
+                <div style={{background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '15px'}}>
                     <div className="input-group">
-                        <label className="input-label">Điểm Bắt Đầu (Start)</label>
+                        <label className="input-label">Start</label>
                         <div className="input-box-wrapper" style={{borderColor: startNodeId ? '#10b981' : '#cbd5e1'}}>
                             <span className="input-box-icon" style={{color: '#10b981'}}><i className="fa-solid fa-location-dot"></i></span>
                             <input type="text" className="input-control" value={getStartLabel()} placeholder="Chọn trên bản đồ..." readOnly />
@@ -324,7 +389,7 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
                     </div>
                     {isTwoPointsAlgo && (
                         <div className="input-group">
-                            <label className="input-label">Điểm Kết Thúc (End)</label>
+                            <label className="input-label">End</label>
                             <div className="input-box-wrapper" style={{borderColor: endNodeId ? '#ef4444' : '#cbd5e1'}}>
                                 <span className="input-box-icon" style={{color: '#ef4444'}}><i className="fa-solid fa-flag-checkered"></i></span>
                                 <input type="text" className="input-control" value={getEndLabel()} placeholder="Chọn trên bản đồ..." readOnly />
@@ -333,7 +398,7 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
                     )}
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginBottom: 10 }}>
                    <button onClick={() => setActiveTool('add-node')} style={btnStyle(activeTool==='add-node')}>➕ Thêm Điểm</button>
                    <button onClick={() => setActiveTool('add-edge')} style={btnStyle(activeTool==='add-edge')}>🔗 Nối Đường</button>
                    <button onClick={() => setActiveTool('cursor')} style={btnStyle(activeTool==='cursor')}>👆 Chọn</button>
@@ -343,13 +408,20 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
                 <button onClick={() => runAlgo()} className="btn-run-big" disabled={isTwoPointsAlgo && (!startNodeId || !endNodeId)}>
                     <i className="fa-solid fa-play"></i> CHẠY MÔ PHỎNG
                 </button>
-
-                {/* NÚT DỪNG / XÓA MỚI */}
-                <button onClick={handleResetResults} className="btn-stop">
-                    <i className="fa-solid fa-stop"></i> DỪNG & XÓA KẾT QUẢ
-                </button>
+                <button onClick={handleResetResults} className="btn-stop">DỪNG & XÓA KẾT QUẢ</button>
                 
-                <div style={{ marginTop: 'auto', padding: 10, color: '#64748b', fontSize: '0.85rem', textAlign: 'center' }}>{log}</div>
+                {/* KHUNG LOG MỚI (Step-by-step) */}
+                <div ref={logContainerRef} className="log-container">
+                    {steps.map((step, idx) => (
+                        <div key={idx} className="log-step">
+                            {idx === 0 && <span className="log-icon">💻</span>}
+                            {step.startsWith('⬇️') && <span className="log-icon">👇</span>}
+                            {step.startsWith('✅') && <span className="log-icon">🎉</span>}
+                            {step.startsWith('❌') && <span className="log-icon">⛔</span>}
+                            {step}
+                        </div>
+                    ))}
+                </div>
             </div>
 
             {/* MAP */}
@@ -358,31 +430,18 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     <MapEvents />
 
-                    {/* LAYER 1: CẠNH NỀN (Tương tác: Có thể Click để xóa) */}
+                    {/* LAYERS */}
                     {edges.map((edge, idx) => (
-                         <Polyline 
-                            key={`base-${idx}`} 
-                            positions={edge.geometry || []} 
-                            pathOptions={{ color: '#3388ff', weight: 4, opacity: 0.3 }} 
-                            eventHandlers={{ click: () => handleEdgeClick(idx) }}
-                        />
+                         <Polyline key={`base-${idx}`} positions={edge.geometry || []} pathOptions={{ color: '#3388ff', weight: 4, opacity: 0.3 }} eventHandlers={{ click: () => handleEdgeClick(idx) }} />
                     ))}
-
-                    {/* LAYER 2: ĐƯỜNG KẾT QUẢ - interactive=false để click xuyên qua */}
                     {edges.map((edge, idx) => {
                         let isPath = false;
                         if (path.length > 0) {
-                             for(let i=0; i<path.length-1; i++) {
-                                 if ((path[i]===edge.from && path[i+1]===edge.to) || (path[i]===edge.to && path[i+1]===edge.from)) {
-                                     isPath = true; break;
-                                 }
-                             }
+                             for(let i=0; i<path.length-1; i++) if ((path[i]===edge.from && path[i+1]===edge.to) || (path[i]===edge.to && path[i+1]===edge.from)) { isPath = true; break; }
                         }
                         if (!isPath) return null;
                         return <Polyline key={`path-${idx}`} positions={edge.geometry || []} pathOptions={{ color: '#ef4444', weight: 8, opacity: 1, className: 'path-line' }} interactive={false} />;
                     })}
-
-                    {/* LAYER 3: ĐƯỜNG NEON - interactive=false */}
                     {edges.map((edge, idx) => {
                         const mstHit = highlightEdges.find(e => (e.from===edge.from && e.to===edge.to) || (e.from===edge.to && e.to===edge.from));
                         const isNeon = mstHit && (selectedAlgo === 'prim' || selectedAlgo === 'kruskal' || selectedAlgo === 'fordfulkerson');
@@ -390,29 +449,14 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
                         const color = selectedAlgo === 'fordfulkerson' ? '#06b6d4' : '#fbbf24';
                         return <Polyline key={`neon-${idx}`} positions={edge.geometry || []} pathOptions={{ color: color, weight: 8, className: selectedAlgo === 'fordfulkerson' ? '' : 'neon-line', opacity: 1 }} interactive={false} />;
                     })}
-
-                    {/* XE CHẠY - interactive=false */}
-                    {vehiclePath.length > 0 && (
-                        <MovingVehicle routeCoords={vehiclePath} icon={selectedAlgo === 'dijkstra' ? Icons.ambulance : (selectedAlgo.includes('euler') ? Icons.garbageTruck : Icons.car)} />
-                    )}
-
-                    {/* NODES */}
+                    {vehiclePath.length > 0 && <MovingVehicle routeCoords={vehiclePath} icon={selectedAlgo === 'dijkstra' ? Icons.ambulance : (selectedAlgo.includes('euler') ? Icons.garbageTruck : Icons.car)} />}
                     {nodes.map(n => {
                         let color = '#ef4444';
-                        if (n.id === startNodeId) color = '#10b981';
-                        else if (n.id === endNodeId) color = '#ef4444';
-                        else color = '#3b82f6';
-                        
-                        if (selectedAlgo === 'bipartite') {
-                            if (nodeColors[n.id] === 'red') color = '#ef4444';
-                            else if (nodeColors[n.id] === 'blue') color = '#3b82f6';
-                            else if (nodeColors[n.id] === 'violet') color = '#8b5cf6';
-                        }
+                        if (n.id === startNodeId) color = '#10b981'; else if (n.id === endNodeId) color = '#ef4444'; else color = '#3b82f6';
+                        if (selectedAlgo === 'bipartite') { if (nodeColors[n.id] === 'red') color = '#ef4444'; else if (nodeColors[n.id] === 'blue') color = '#3b82f6'; else if (nodeColors[n.id] === 'violet') color = '#8b5cf6'; }
                         if (visitedNodes.includes(n.id)) color = '#eab308';
-
                         let icon = createLabelIcon(n.label, color);
                         if (selectedAlgo === 'prim' || selectedAlgo === 'kruskal') icon = Icons.pole;
-
                         return <Marker key={n.id} position={[n.lat, n.lng]} icon={icon} eventHandlers={{ click: () => handleNodeClick(n.id) }}><Popup>{n.label}</Popup></Marker>;
                     })}
                 </MapContainer>
