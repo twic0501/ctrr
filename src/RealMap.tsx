@@ -90,14 +90,13 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
     const [selectedAlgo, setSelectedAlgo] = useState<AlgoType>('dijkstra');
 
     // VISUALS
-    const [steps, setSteps] = useState<string[]>(["Sẵn sàng! Hãy thêm các điểm lên bản đồ."]); // Thay log đơn giản bằng mảng steps
+    const [steps, setSteps] = useState<string[]>(["Sẵn sàng! Hãy thêm các điểm lên bản đồ."]); 
     const [path, setPath] = useState<string[]>([]);
     const [highlightEdges, setHighlightEdges] = useState<any[]>([]);
     const [vehiclePath, setVehiclePath] = useState<any[]>([]);
     const [visitedNodes, setVisitedNodes] = useState<string[]>([]);
     const [nodeColors, setNodeColors] = useState<Record<string, string>>({});
 
-    // Ref cho ô log để tự scroll xuống dưới
     const logContainerRef = useRef<HTMLDivElement>(null);
     useEffect(() => {
         if (logContainerRef.current) logContainerRef.current.scrollTop = logContainerRef.current.scrollHeight;
@@ -168,13 +167,15 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
         }
     };
 
-    // --- HELPER: THÊM DÒNG LOG ---
     const addLog = (msg: string) => {
         setSteps(prev => [...prev, msg]);
     };
 
-    // --- HELPER: LẤY TÊN NODE (A, B, C) ---
-    const getNodeName = (id: string) => nodes.find(n => n.id === id)?.label || id;
+    // --- FIX TS2345: Cho phép nhận undefined và trả về giá trị mặc định ---
+    const getNodeName = (id?: string) => {
+        if (!id) return "Unknown";
+        return nodes.find(n => n.id === id)?.label || id;
+    };
 
     const handleResetResults = () => {
         setPath([]); setHighlightEdges([]); setVehiclePath([]); setVisitedNodes([]); setNodeColors({});
@@ -183,8 +184,9 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
 
     // --- ALGORITHM RUNNER ---
     const runAlgo = async (sId?: string, eId?: string) => {
-        const start = sId || startNodeId;
-        const end = eId || endNodeId;
+        // --- FIX TS2345: Đảm bảo start và end luôn là string (fallback về chuỗi rỗng) ---
+        const start = sId || startNodeId || "";
+        const end = eId || endNodeId || "";
 
         if (isTwoPointsAlgo && (!start || !end)) {
             Toastify({ text: "Vui lòng chọn đủ Start & End!", backgroundColor: "#ef4444" }).showToast();
@@ -196,7 +198,6 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
 
         handleResetResults();
         
-        // Tạo log mở đầu
         const sLabel = getNodeName(start);
         const eLabel = getNodeName(end);
         setSteps([`🚀 BẮT ĐẦU CHẠY: ${selectedAlgo.toUpperCase()}`]);
@@ -212,15 +213,12 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
             else adjList[e.to].push([e.from, e.weight]); 
         });
 
-        // --- EXECUTE & GENERATE DETAILED LOGS ---
-        
+        // EXECUTE
         if (selectedAlgo === 'dijkstra') {
             const res = dijkstra(adjList, start, end);
             if (res.path?.length) {
                 setPath(res.path);
                 reconstructGeometryPath(res.path);
-                
-                // LOG CHI TIẾT DIJKSTRA
                 addLog("--- CHI TIẾT ĐƯỜNG ĐI ---");
                 let currentDist = 0;
                 for(let i=0; i<res.path.length-1; i++) {
@@ -238,8 +236,6 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
         else if (selectedAlgo === 'prim') {
             const res = prim(adjList);
             setHighlightEdges(res.mstEdges);
-            
-            // LOG CHI TIẾT PRIM
             addLog("--- QUÁ TRÌNH NỐI CÁP ---");
             res.mstEdges.forEach((e: any, idx: number) => {
                 addLog(`⚡ Bước ${idx+1}: Nối ${getNodeName(e.from)} <-> ${getNodeName(e.to)} (Dây: ${e.weight} km)`);
@@ -250,8 +246,6 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
         else if (selectedAlgo === 'kruskal') {
             const res = kruskal(nodes.map(n=>n.id), edges.map(e=>({from:e.from, to:e.to, weight:e.weight})));
             setHighlightEdges(res.mstEdges);
-            
-            // LOG CHI TIẾT KRUSKAL
             addLog("--- QUÁ TRÌNH GỘP CỤM ---");
             res.mstEdges.forEach((e: any, idx: number) => {
                 addLog(`🔗 Bước ${idx+1}: Chọn cạnh rẻ nhất ${getNodeName(e.from)}-${getNodeName(e.to)} (${e.weight} km)`);
@@ -261,13 +255,9 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
 
         else if (selectedAlgo === 'bfs' || selectedAlgo === 'dfs') {
             const res = selectedAlgo === 'bfs' ? bfs(adjList, start) : dfs(adjList, start);
-            
-            // LOG DUYỆT
             addLog(`--- THỨ TỰ DUYỆT (${res.visitedOrder.length} ĐIỂM) ---`);
             const orderNames = res.visitedOrder.map((id:string) => getNodeName(id)).join(" ➔ ");
             addLog(orderNames);
-
-            // Animation & Log từng bước
             for(let i=0; i<res.visitedOrder.length; i++) {
                 const id = res.visitedOrder[i];
                 setVisitedNodes(prev => [...prev, id]);
@@ -280,7 +270,6 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
         else if (selectedAlgo === 'fordfulkerson') {
             const res = fordFulkerson(adjList, start, end);
             const flowEdges: any[] = [];
-            
             addLog("--- CHI TIẾT DÒNG CHẢY ---");
             res.flowEdges.forEach((fe:any) => { 
                 if(fe.flow>0) {
@@ -290,8 +279,6 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
             });
             setHighlightEdges(flowEdges);
             addLog(`✅ TỔNG LƯU LƯỢNG TỐI ĐA: ${res.maxFlow}`);
-            
-            // Demo xe chạy
             if(res.maxFlow > 0) {
                  const simpleRes = dijkstra(adjList, start, end);
                  if(simpleRes.path) reconstructGeometryPath(simpleRes.path);
@@ -303,7 +290,6 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
              if (res.path) {
                  setPath(res.path);
                  reconstructGeometryPath(res.path);
-                 
                  addLog("--- LỘ TRÌNH XE RÁC ---");
                  addLog(`🚛 Lộ trình: ${res.path.map((id:string) => getNodeName(id)).join(" -> ")}`);
                  addLog("✅ Đã quét sạch tất cả các con đường!");
@@ -410,7 +396,6 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
                 </button>
                 <button onClick={handleResetResults} className="btn-stop">DỪNG & XÓA KẾT QUẢ</button>
                 
-                {/* KHUNG LOG MỚI (Step-by-step) */}
                 <div ref={logContainerRef} className="log-container">
                     {steps.map((step, idx) => (
                         <div key={idx} className="log-step">
@@ -424,13 +409,10 @@ const RealMap: React.FC<RealMapProps> = ({ onBack }) => {
                 </div>
             </div>
 
-            {/* MAP */}
             <div style={{ flex: 1 }}>
                 <MapContainer center={[10.7769, 106.6953]} zoom={16} style={{ height: '100%', width: '100%' }}>
                     <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                     <MapEvents />
-
-                    {/* LAYERS */}
                     {edges.map((edge, idx) => (
                          <Polyline key={`base-${idx}`} positions={edge.geometry || []} pathOptions={{ color: '#3388ff', weight: 4, opacity: 0.3 }} eventHandlers={{ click: () => handleEdgeClick(idx) }} />
                     ))}
