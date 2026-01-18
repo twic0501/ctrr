@@ -1,3 +1,4 @@
+// src/App.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import { Network } from "vis-network";
 import { DataSet } from "vis-data";
@@ -5,7 +6,7 @@ import Toastify from 'toastify-js';
 import "toastify-js/src/toastify.css";
 import './App.css'; 
 
-// Import thuật toán
+// --- IMPORT CÁC THUẬT TOÁN ---
 import { dijkstra } from './algorithms/dijkstra'; 
 import { bfs } from './algorithms/bfs';
 import { dfs } from './algorithms/dfs';
@@ -16,6 +17,7 @@ import { getRepresentations } from './utils/graph-converter';
 import { fordFulkerson } from './algorithms/ford-fulkerson';
 import { fleury, hierholzer } from './algorithms/euler';
 
+// --- TYPES ---
 type ToolMode = 'cursor' | 'add-node' | 'add-edge' | 'delete' | 'edit';
 type AlgoType = 'dijkstra' | 'bfs' | 'dfs' | 'bipartite' | 'prim' | 'kruskal' | 'fordfulkerson' | 'fleury' | 'hierholzer';
 
@@ -24,74 +26,81 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 const App: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const networkRef = useRef<Network | null>(null);
+  const bottomLogRef = useRef<HTMLDivElement>(null); 
   
-  // FIX 1: Thêm "as any" để tránh lỗi overload Type
-  const nodesRef = useRef<any>(new DataSet([
-    { id: '1', label: '1', x: -100, y: 0 }, 
-    { id: '2', label: '2', x: 100, y: 0 }, 
-    { id: '3', label: '3', x: 0, y: 100 }
-  ] as any));
+  // --- DỮ LIỆU KHỞI TẠO ---
+  const nodesRef = useRef<any>(new DataSet<any>([
+    { id: '1', label: '1', x: -100, y: 0 }, { id: '2', label: '2', x: 0, y: -80 }, 
+    { id: '3', label: '3', x: 100, y: 0 }, { id: '4', label: '4', x: 0, y: 80 }
+  ]));
+  const edgesRef = useRef<any>(new DataSet<any>([
+    { from: '1', to: '2', label: '4', weight: 4 }, { from: '2', to: '3', label: '5', weight: 5 },
+    { from: '3', to: '4', label: '2', weight: 2 }, { from: '4', to: '1', label: '8', weight: 8 },
+    { from: '2', to: '4', label: '1', weight: 1 }
+  ]));
 
-  const edgesRef = useRef<any>(new DataSet([
-    { from: '1', to: '2', label: '10', weight: 10 },
-    { from: '2', to: '3', label: '5', weight: 5 },
-    { from: '1', to: '3', label: '15', weight: 15 }
-  ] as any));
-
-  const edgeCallbackRef = useRef<any>(null);
   const activeToolRef = useRef<ToolMode>('cursor'); 
 
-  // States
+  // --- STATES ---
   const [activeTool, setActiveTool] = useState<ToolMode>('cursor');
   const [selectedAlgo, setSelectedAlgo] = useState<AlgoType>('dijkstra');
   const [isDirected, setIsDirected] = useState(false);
   
   const [startNode, setStartNode] = useState('1');
-  const [endNode, setEndNode] = useState('2');
-  const [resultLog, setResultLog] = useState<React.ReactNode>(<span className="placeholder-text">Sẵn sàng...</span>);
+  const [endNode, setEndNode] = useState('3');
+  const [resultLog, setResultLog] = useState<React.ReactNode>(<div style={{opacity: 0.6}}>... Ready ...</div>);
   const [isRunning, setIsRunning] = useState(false);
 
   // Modal States
   const [modalOpen, setModalOpen] = useState(false);
   const [repModalOpen, setRepModalOpen] = useState(false);
   const [representations, setRepresentations] = useState({ matrixStr: "", adjListStr: "", edgeListStr: "" });
-  
-  const [edgeData, setEdgeData] = useState<any>(null);
   const [inputWeight, setInputWeight] = useState(1);
   const inputWeightRef = useRef<HTMLInputElement>(null);
   const [editingEdgeId, setEditingEdgeId] = useState<string | null>(null);
 
+  // Sync ref & Auto scroll log
   useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
+  useEffect(() => { if (bottomLogRef.current) bottomLogRef.current.scrollTop = bottomLogRef.current.scrollHeight; }, [resultLog]);
 
-  // --- 1. KHỞI TẠO VIS (CHẠY TRƯỚC) ---
+  // --- LOGIC: CHUYỂN ĐỔI CHẾ ĐỘ (Mode Switch) ---
+  const handleSwitchMode = (targetModeDirected: boolean) => {
+      if (isDirected === targetModeDirected) return;
+      // QUAN TRỌNG: Xóa hết cạnh khi đổi chế độ để tránh lỗi logic đồ thị
+      edgesRef.current.clear(); 
+      Toastify({ 
+          text: `Đã chuyển sang ${targetModeDirected ? "Có hướng" : "Vô hướng"} (Reset cạnh)`, 
+          backgroundColor: "#4f46e5", 
+          gravity: "bottom" 
+      }).showToast();
+      setIsDirected(targetModeDirected);
+  };
+
+  // --- INIT VIS-NETWORK ---
   useEffect(() => {
     if (!containerRef.current) return;
     const options = {
       nodes: {
-        shape: "dot", size: 25, borderWidth: 2,
+        shape: "circle", size: 26, borderWidth: 2,
         color: { background: "#ffffff", border: "#4f46e5", highlight: { background: "#e0e7ff", border: "#4338ca" } },
-        font: { size: 16, color: "#1e293b", strokeWidth: 0 },
-        shadow: { enabled: true, color: "rgba(0,0,0,0.1)", size: 10, x: 2, y: 2 },
+        font: { size: 16, color: "#4f46e5", bold: true, align: 'center', face: 'Inter, sans-serif' },
+        shadow: { enabled: true, color: "rgba(0,0,0,0.1)", size: 4, x: 1, y: 1 },
       },
       edges: {
         width: 2, color: { color: "#94a3b8", highlight: "#4f46e5" }, 
-        font: { align: "top", size: 16, color: "#4f46e5", strokeWidth: 3, strokeColor: "#ffffff" },
-        // Khởi tạo mũi tên dựa trên state ban đầu luôn
-        arrows: { to: { enabled: isDirected } },
-        // FIX 2: Thêm enabled: true
-        smooth: { enabled: true, type: isDirected ? 'curvedCW' : 'continuous', roundness: 0.2 }
+        font: { align: "top", size: 15, color: "#4f46e5", strokeWidth: 3, strokeColor: "#ffffff", background: 'none' },
+        arrows: { to: { enabled: isDirected, scaleFactor: 1.1 } },
+        smooth: { enabled: true, type: isDirected ? 'curvedCW' : 'continuous', roundness: 0.1 }
       },
       physics: false, 
-      interaction: { hover: true, dragNodes: true, dragView: true, zoomView: true, selectConnectedEdges: false },
+      interaction: { hover: true, dragNodes: true, selectConnectedEdges: false },
       manipulation: {
         enabled: false,
         addNode: (data: any, callback: any) => {
           const allIds = nodesRef.current.getIds().map((id: any) => parseInt(id));
-          const maxId = allIds.length > 0 ? Math.max(...allIds) : 0;
-          const newId = String(maxId + 1);
-          data.id = newId; data.label = newId;
-          callback(data);
-          setTimeout(() => { if (activeToolRef.current === 'add-node' && networkRef.current) networkRef.current.addNodeMode(); }, 10);
+          const newId = String((allIds.length > 0 ? Math.max(...allIds) : 0) + 1);
+          data.id = newId; data.label = newId; callback(data);
+          setTimeout(() => { if (activeToolRef.current === 'add-node') networkRef.current?.addNodeMode(); }, 10);
         },
         addEdge: (data: any, callback: any) => {
           if (data.from === data.to) { callback(null); return; }
@@ -99,253 +108,277 @@ const App: React.FC = () => {
               if (isDirected) return e.from === data.from && e.to === data.to;
               return (e.from === data.from && e.to === data.to) || (e.from === data.to && e.from === data.from);
           });
-          if(exists) {
-            Toastify({ text: "Đã có đường nối!", backgroundColor: "#ef4444" }).showToast();
-            callback(null);
-            setTimeout(() => { if (activeToolRef.current === 'add-edge' && networkRef.current) networkRef.current.addEdgeMode(); }, 10);
-            return;
-          }
-          setEdgeData(data);
-          edgeCallbackRef.current = callback;
-          setEditingEdgeId(null);
-          setInputWeight(1);
-          setModalOpen(true);
+          if(exists) { Toastify({ text: "Đã có cạnh!", backgroundColor: "#ef4444" }).showToast(); callback(null); } 
+          else { data.weight = 0; data.label = ""; callback(data); } 
+          setTimeout(() => { if (activeToolRef.current === 'add-edge') networkRef.current?.addEdgeMode(); }, 10);
         }
       }
     };
-    // FIX 1: cast nodes/edges as any
     const net = new Network(containerRef.current, { nodes: nodesRef.current, edges: edgesRef.current } as any, options);
     networkRef.current = net;
     
+    // Sự kiện Click
     net.on("click", (params) => {
         if (activeToolRef.current === 'delete') {
             if (params.nodes.length > 0) {
-                const nodeId = params.nodes[0];
-                nodesRef.current.remove(nodeId);
-                const connectedEdges = net.getConnectedEdges(nodeId);
-                edgesRef.current.remove(connectedEdges);
+                nodesRef.current.remove(params.nodes[0]);
+                edgesRef.current.remove(net.getConnectedEdges(params.nodes[0]));
             } else if (params.edges.length > 0) edgesRef.current.remove(params.edges[0]);
-        }
-        else if (activeToolRef.current === 'edit' && params.edges.length > 0) {
+        } else if (activeToolRef.current === 'edit' && params.edges.length > 0) {
             const edgeId = params.edges[0];
             const edge = edgesRef.current.get(edgeId);
-            if (edge) {
-                setEditingEdgeId(edgeId); setInputWeight(edge.weight || 1); setModalOpen(true);
-            }
+            if (edge) { setEditingEdgeId(edgeId); setInputWeight(edge.weight || 0); setModalOpen(true); }
         }
     });
-    net.on("resize", () => { net.fit(); });
-    return () => { net.destroy(); };
-  }, []); // Chỉ chạy 1 lần khi Mount
+    net.on("resize", () => net.fit());
+    return () => net.destroy();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // --- 2. CẬP NHẬT KHI ĐỔI CHẾ ĐỘ (FIX LỖI CRASH) ---
+  // Cập nhật option khi đổi mode
   useEffect(() => {
-      // Chỉ chạy khi network đã tồn tại
       if (networkRef.current) {
-          networkRef.current.setOptions({
-              edges: {
-                  arrows: { to: { enabled: isDirected } }, 
-                  // FIX 2: Thêm enabled: true vào update
-                  smooth: { enabled: true, type: isDirected ? 'curvedCW' : 'continuous', roundness: 0.2 } 
-              }
-          });
+          networkRef.current.setOptions({ edges: { arrows: { to: { enabled: isDirected } }, smooth: { enabled: true, type: isDirected ? 'curvedCW' : 'continuous' } } });
       }
   }, [isDirected]);
 
+  // Cập nhật con trỏ chuột theo Tool
   useEffect(() => {
     const net = networkRef.current; if (!net) return;
-    net.disableEditMode(); const container = containerRef.current; if(container) container.style.cursor = 'default';
+    net.disableEditMode(); containerRef.current!.style.cursor = 'default';
     if (activeTool === 'add-node') net.addNodeMode();
     else if (activeTool === 'add-edge') net.addEdgeMode();
-    else if (activeTool === 'delete' && container) container.style.cursor = 'not-allowed';
-    else if (activeTool === 'edit' && container) container.style.cursor = 'pointer';
+    else if (activeTool === 'delete') containerRef.current!.style.cursor = 'not-allowed';
+    else if (activeTool === 'edit') containerRef.current!.style.cursor = 'pointer';
   }, [activeTool]);
 
-  useEffect(() => {
-    if (modalOpen && inputWeightRef.current) setTimeout(() => inputWeightRef.current?.focus(), 50);
-  }, [modalOpen]);
+  useEffect(() => { if (modalOpen) setTimeout(() => inputWeightRef.current?.focus(), 50); }, [modalOpen]);
 
-  // Logic Lưu
-  const handleSaveEdge = () => {
-    const weight = Number(inputWeight);
-    if (weight <= 0) return;
+  // --- HANDLERS ---
+  const handleSaveWeight = () => {
     if (editingEdgeId) {
-        edgesRef.current.update({ id: editingEdgeId, label: String(weight), weight: weight });
+        const w = Number(inputWeight);
+        edgesRef.current.update({ id: editingEdgeId, label: w === 0 ? "" : String(w), weight: w });
         setEditingEdgeId(null); setModalOpen(false);
-    } else if (edgeData && edgeCallbackRef.current) {
-        edgeData.label = String(weight); edgeData.weight = weight;
-        edgeCallbackRef.current(edgeData); edgeCallbackRef.current = null; setModalOpen(false);
-        setTimeout(() => { if (activeToolRef.current === 'add-edge' && networkRef.current) networkRef.current.addEdgeMode(); }, 10);
     }
   };
-  const handleCancelEdge = () => {
-    if (edgeCallbackRef.current) { edgeCallbackRef.current(null); edgeCallbackRef.current = null; }
-    setEditingEdgeId(null); setModalOpen(false);
-    setTimeout(() => { if (activeToolRef.current === 'add-edge' && networkRef.current) networkRef.current.addEdgeMode(); }, 10);
+  const handleNoWeight = () => {
+    if (editingEdgeId) { edgesRef.current.update({ id: editingEdgeId, label: "", weight: 0 }); setEditingEdgeId(null); setModalOpen(false); }
   };
-  const handleClearGraph = () => {
-    if (window.confirm("Xóa toàn bộ?")) {
-      nodesRef.current.clear(); edgesRef.current.clear();
-      setResultLog(<span className="placeholder-text">Sẵn sàng...</span>);
-      setStartNode(""); setEndNode("");
-    }
-  };
+  const handleClear = () => { if (window.confirm("Xóa toàn bộ đồ thị?")) { nodesRef.current.clear(); edgesRef.current.clear(); setResultLog("Graph Cleared"); } };
+  const handleShowRep = () => { setRepresentations(getRepresentations(nodesRef.current.get(), edgesRef.current.get(), isDirected)); setRepModalOpen(true); };
 
-  const handleShowRep = () => {
-    const nodes = nodesRef.current.get();
-    const edges = edgesRef.current.get();
-    const data = getRepresentations(nodes, edges, isDirected);
-    setRepresentations(data);
-    setRepModalOpen(true);
-  };
-
-  // --- HÀM CHẠY THUẬT TOÁN ---
+  // ===========================================
+  // MASTER FUNCTION: HANDLE RUN (CORE LOGIC)
+  // ===========================================
   const handleRun = async () => {
     if (isRunning) return; setActiveTool('cursor');
-    nodesRef.current.update(nodesRef.current.get().map((n:any) => ({ id: n.id, color: { background: "#ffffff", border: "#4f46e5" }, borderWidth: 2 })));
-    edgesRef.current.update(edgesRef.current.get().map((e:any) => ({ id: e.id, color: { color: "#94a3b8" }, width: 2, label: String(e.weight || e.label || 1) })));
-
-    if (nodesRef.current.length === 0) { Toastify({ text: "Đồ thị trống!", backgroundColor: "#ef4444" }).showToast(); return; }
-
-    const adjList: any = {};
-    // FIX 3: Xóa biến nodesArr chưa dùng (hoặc để đó nhưng ko dùng cũng ko sao, nhưng xóa cho sạch)
-    // const nodesArr = nodesRef.current.getIds(); 
-    nodesRef.current.forEach((n: any) => { adjList[String(n.id)] = []; });
-    const edgesArr: any[] = [];
     
-    edgesRef.current.forEach((e: any) => {
-      const u = String(e.from); const v = String(e.to);
-      const w = Number(e.weight !== undefined ? e.weight : (e.label || 1));
+    // 1. RESET GRAPH STYLES
+    nodesRef.current.update(nodesRef.current.get().map((n:any) => ({ 
+        id: n.id, color: { background: "#ffffff", border: "#4f46e5" }, 
+        shadow: { enabled: true, color: "rgba(0,0,0,0.1)", size: 4 } 
+    })));
+    edgesRef.current.update(edgesRef.current.get().map((e:any) => ({ 
+        id: e.id, color: { color: "#94a3b8" }, width: 2, 
+        font: { color: "#4f46e5", strokeWidth: 3, strokeColor: 'white' }, 
+        label: e.weight ? String(e.weight) : "" 
+    })));
+
+    const allNodes = nodesRef.current.get();
+    const allEdges = edgesRef.current.get();
+    if (allNodes.length === 0) { Toastify({ text: "Đồ thị trống!", backgroundColor: "#ef4444" }).showToast(); return; }
+
+    // 2. CHECK TRỌNG SỐ CHO DIJKSTRA
+    if (selectedAlgo === 'dijkstra') {
+        const invalid = allEdges.filter((e: any) => !e.weight || Number(e.weight) <= 0);
+        if (invalid.length > 0) {
+            Toastify({ text: "⚠️ Dijkstra cần trọng số dương!", backgroundColor: "#f59e0b" }).showToast();
+            invalid.forEach((e:any) => edgesRef.current.update({ id: e.id, color: { color: "#ef4444" }, width: 3 }));
+            return;
+        }
+    }
+
+    // 3. BUILD DATA STRUCTURE
+    const adjList: any = {};
+    allNodes.forEach((n: any) => adjList[String(n.id)] = []);
+    const edgesArr: any[] = []; 
+
+    allEdges.forEach((e: any) => {
+      const u = String(e.from), v = String(e.to), w = Number(e.weight || 0);
+      // AdjList cho thuật toán tìm đường
       if(adjList[u]) adjList[u].push([v, w]);
+      // Nếu vô hướng thì thêm chiều ngược lại vào AdjList logic
       if(!isDirected && adjList[v]) adjList[v].push([u, w]);
+      // Edge List cho Kruskal
       edgesArr.push({ from: u, to: v, weight: w, id: e.id });
     });
 
     setIsRunning(true);
+    const sNode = String(startNode).trim(); const eNode = String(endNode).trim();
 
-    // --- 1. PRIM / KRUSKAL (MST) ---
-    if (selectedAlgo === 'prim' || selectedAlgo === 'kruskal') {
-        if (isDirected) Toastify({ text: "MST thường dùng cho vô hướng!", backgroundColor: "#f59e0b", duration: 3000 }).showToast();
-        let mstEdges: any[] = [], totalCost = 0, algoName = selectedAlgo === 'prim' ? "Prim" : "Kruskal";
-        if (selectedAlgo === 'prim') { const res = prim(adjList); mstEdges = res.mstEdges; totalCost = res.cost; } 
-        else { const res = kruskal(nodesRef.current.getIds() as string[], edgesArr); mstEdges = res.mstEdges; totalCost = res.cost; }
+    // --- STYLE CONFIG ---
+    // Style cho việc QUÉT (Scanning/Traversal) - Xanh Dương
+    const scanStyle = { 
+        node: { background: "#bfdbfe", border: "#3b82f6" }, 
+        edge: { color: "#3b82f6", width: 4 }               
+    };
+    // Style cho KẾT QUẢ ĐƯỜNG ĐI (Path) - Vàng Cam
+    const pathStyle = { 
+        node: { background: "#facc15", border: "#eab308", shadow: { enabled: true, color: "rgba(250, 204, 21, 0.6)", size: 10 } },
+        edge: { color: "#facc15", width: 6, shadow: { enabled: true, color: "rgba(250, 204, 21, 0.6)", size: 10 } }
+    };
+    const mstStyle = { node: { background: "#10b981", border: "#059669" }, edge: { color: "#10b981", width: 5 } };
+    const flowStyle = { edge: { color: "#ef4444", width: 4 } };
 
-        setResultLog(<div>🚀 Đang chạy {algoName}...</div>);
-        for (const edge of mstEdges) {
-            const visEdge = edgesRef.current.get().find((e:any) => (String(e.from)===edge.from && String(e.to)===edge.to) || (!isDirected && String(e.from)===edge.to && String(e.to)===edge.from));
-            if (visEdge) {
-                edgesRef.current.update({ id: visEdge.id, color: { color: "#10b981" }, width: 4 });
-                nodesRef.current.update({ id: edge.from, color: { background: "#d1fae5", border: "#10b981" }, borderWidth: 3 });
-                nodesRef.current.update({ id: edge.to, color: { background: "#d1fae5", border: "#10b981" }, borderWidth: 3 });
-                await sleep(500);
-            }
+    // Helper: Tìm và tô màu cạnh
+    const highlightEdge = async (u: string, v: string, style: any) => {
+        const edge = allEdges.find((e: any) => 
+            (String(e.from) === u && String(e.to) === v) || 
+            (!isDirected && String(e.from) === v && String(e.to) === u)
+        );
+        if (edge) {
+            edgesRef.current.update({ id: edge.id, ...style.edge });
+            await sleep(150);
         }
-        setResultLog(<div>✅ <b>{algoName} XONG</b><br/>Tổng trọng số: {totalCost}</div>);
-        setIsRunning(false); return;
-    }
+    };
 
-    // --- 2. FORD-FULKERSON (Max Flow) ---
-    if (selectedAlgo === 'fordfulkerson') {
-        if (!isDirected) Toastify({ text: "Max Flow cần đồ thị CÓ HƯỚNG!", backgroundColor: "#ef4444", duration: 3000 }).showToast();
-        const sNode = String(startNode).trim(), eNode = String(endNode).trim();
-        const result = fordFulkerson(adjList, sNode, eNode);
+    // ================================
+    // ALGORITHM EXECUTION BLOCK
+    // ================================
+
+    // 1. BFS & DFS (Chế độ DUYỆT - Traversal)
+    if (selectedAlgo === 'bfs' || selectedAlgo === 'dfs') {
+        if(!sNode) { Toastify({ text: "Chọn điểm bắt đầu!", backgroundColor: "#f59e0b" }).showToast(); setIsRunning(false); return; }
         
-        setResultLog(<div>🚀 Đang tìm luồng cực đại...</div>); await sleep(500);
-        
-        for (const flowEdge of result.flowEdges) {
-            const visEdge = edgesRef.current.get().find((e:any) => String(e.from)===flowEdge.from && String(e.to)===flowEdge.to);
-            if (visEdge) {
-                const capacity = visEdge.weight || 1;
-                edgesRef.current.update({ 
-                    id: visEdge.id, 
-                    label: `${flowEdge.flow}/${capacity}`, 
-                    color: { color: "#ef4444" }, width: 4,
-                    font: { color: "#ef4444", strokeWidth: 4, strokeColor: 'white' }
-                });
-                await sleep(300);
-            }
+        let res: any;
+        if (selectedAlgo === 'bfs') {
+             res = bfs(adjList, sNode); // Chỉ cần Start Node
+             setResultLog(<div>🌊 <b>BFS Traversal</b> (Lan truyền)</div>);
+        } else {
+             res = dfs(adjList, sNode); // Chỉ cần Start Node
+             setResultLog(<div>⛏️ <b>DFS Traversal</b> (Đào sâu)</div>);
         }
-        setResultLog(<div>✅ <b>Max Flow: {result.maxFlow}</b><br/>Đã cập nhật trên dây (Flow/Cap).</div>);
-        setIsRunning(false); return;
-    }
-
-    // --- 3. FLEURY / HIERHOLZER (Euler) ---
-    if (selectedAlgo === 'fleury' || selectedAlgo === 'hierholzer') {
-        const algoName = selectedAlgo === 'fleury' ? "Fleury" : "Hierholzer";
-        let res: any = {};
-        if (selectedAlgo === 'fleury') res = fleury(adjList, isDirected);
-        else res = hierholzer(adjList, isDirected);
 
         if (res.error) {
-            setResultLog(<div style={{color:'#ef4444'}}>❌ Lỗi: {res.error}</div>);
-            Toastify({ text: "Không thỏa mãn điều kiện Euler!", backgroundColor: "#ef4444" }).showToast();
+            setResultLog(<span className="error-text">{res.error}</span>);
         } else {
-            setResultLog(<div>🚀 Đang chạy {algoName}...</div>);
-            const path = res.path;
-            const allEdges = edgesRef.current.get();
-            
-            for (let i = 0; i < path.length - 1; i++) {
-                const u = path[i]; const v = path[i+1];
-                nodesRef.current.update({ id: u, color: { background: "#fee2e2", border: "#ef4444" }, borderWidth: 4 });
-                await sleep(400);
-                const edge = allEdges.find((e: any) => 
-                     (String(e.from) === u && String(e.to) === v) || (!isDirected && String(e.from) === v && String(e.to) === u)
-                );
-                if (edge) {
-                    edgesRef.current.update({ id: edge.id, color: { color: "#ef4444" }, width: 4 });
-                    const oldLabel = edge.label || "";
-                    edgesRef.current.update({ id: edge.id, label: `${oldLabel} [${i+1}]` });
-                }
-                await sleep(400);
+            // Animation: Hiển thị cây duyệt
+            for (const nodeId of res.visitedOrder) {
+                nodesRef.current.update({ id: nodeId, ...scanStyle.node });
+                const parentId = res.previous[nodeId];
+                if (parentId) await highlightEdge(parentId, nodeId, scanStyle);
+                else await sleep(200); 
             }
-            nodesRef.current.update({ id: path[path.length-1], color: { background: "#fee2e2", border: "#ef4444" }, borderWidth: 4 });
-            setResultLog(<div>✅ <b>{algoName} ({res.type})</b><br/>Path: {path.join(' -> ')}</div>);
+            setResultLog(<div>✅ <b>Duyệt Hoàn Tất!</b><br/>Thứ tự: {res.visitedOrder.join(" ➔ ")}</div>);
         }
-        setIsRunning(false); return;
     }
 
-    // --- 4. Bipartite & Tìm đường ---
-    if (selectedAlgo === 'bipartite') {
-        setResultLog(<div>🔍 Kiểm tra...</div>); await sleep(500);
-        const result = checkBipartite(adjList);
-        if (result.isBipartite) {
-            setResultLog(<div>✅ <b>2 PHÍA</b><br/>A: {result.setA.join(',')}<br/>B: {result.setB.join(',')}</div>);
-            result.setA.forEach(id => nodesRef.current.update({ id, color: { background: "#ffedd5", border: "#f97316" } }));
-            result.setB.forEach(id => nodesRef.current.update({ id, color: { background: "#ede9fe", border: "#8b5cf6" } }));
-        } else {
-            setResultLog(<div style={{color:'#ef4444'}}>❌ Không phải 2 phía (Xung đột: {result.conflictNode})</div>);
-            if(result.conflictNode) nodesRef.current.update({ id: result.conflictNode, color: { background: "#fee2e2", border: "#ef4444" } });
+    // 2. DIJKSTRA (Tìm đường ngắn nhất)
+    else if (selectedAlgo === 'dijkstra') {
+        if(!sNode || !eNode) { Toastify({ text: "Nhập Start & End!", backgroundColor: "#f59e0b" }).showToast(); setIsRunning(false); return; }
+        
+        const res = dijkstra(adjList, sNode, eNode);
+        if (res.error) setResultLog(<span className="error-text">{res.error}</span>);
+        else {
+            setResultLog(<div>🚀 Dijkstra Scanning...</div>);
+            // Quá trình quét (Scanning)
+            for (const n of res.visitedOrder) { 
+                nodesRef.current.update({ id: n, background: "#e0e7ff", border: "#a5b4fc" }); 
+                await sleep(50); 
+            }
+            // Vẽ đường đi (Path)
+            if (res.path.length > 0) {
+                for (let i = 0; i < res.path.length; i++) {
+                    const u = res.path[i];
+                    nodesRef.current.update({ id: u, ...pathStyle.node }); await sleep(200);
+                    if (i < res.path.length - 1) await highlightEdge(u, res.path[i+1], pathStyle);
+                }
+                setResultLog(<div>✅ <b>Dijkstra Done</b><br/>Cost: {res.cost}<br/>Path: {res.path.join(" ➔ ")}</div>);
+            } else setResultLog(<div className="error-text">Không tìm thấy đường đi!</div>);
         }
-        setIsRunning(false); return;
     }
-
-    const sNode = String(startNode).trim(); const eNode = String(endNode).trim();
-    if(!sNode || !eNode) { Toastify({ text: "Nhập Start/End!", backgroundColor: "#f59e0b" }).showToast(); setIsRunning(false); return; }
     
-    let result: any = { path: [], cost: 0 };
-    let algoName = "";
-    if (selectedAlgo === 'dijkstra') { algoName = "Dijkstra"; result = dijkstra(adjList, sNode, eNode); }
-    else if (selectedAlgo === 'bfs') { algoName = "BFS"; result = bfs(adjList, sNode, eNode); }
-    else if (selectedAlgo === 'dfs') { algoName = "DFS"; result = dfs(adjList, sNode, eNode); }
+    // 3. MST (PRIM / KRUSKAL) - Chỉ Vô Hướng
+    else if (selectedAlgo === 'prim' || selectedAlgo === 'kruskal') {
+        if (isDirected) {
+            Toastify({ text: "⛔ MST chỉ dùng cho đồ thị VÔ HƯỚNG!", backgroundColor: "#ef4444", duration: 3000 }).showToast();
+            setIsRunning(false); return;
+        }
+        
+        setResultLog(<div>🚀 Running {selectedAlgo.toUpperCase()}...</div>);
+        let mstEdges: any[] = []; let totalCost = 0;
+        
+        if (selectedAlgo === 'prim') {
+            const res = prim(adjList); mstEdges = res.mstEdges; totalCost = res.cost;
+        } else {
+            const res = kruskal(allNodes.map((n:any)=>String(n.id)), edgesArr); mstEdges = res.mstEdges; totalCost = res.cost;
+        }
 
-    if (result.error || result.path.length === 0) { setResultLog(<span style={{color:"#ef4444"}}>⚠️ Không thấy đường!</span>); setIsRunning(false); return; }
+        for (const edge of mstEdges) {
+            nodesRef.current.update([{id: edge.from, ...mstStyle.node}, {id: edge.to, ...mstStyle.node}]);
+            await highlightEdge(edge.from, edge.to, mstStyle);
+        }
+        setResultLog(<div>✅ <b>MST Done</b><br/>Total Cost: <b>{totalCost}</b></div>);
+    }
 
-    setResultLog(<div>🚀 Đang chạy {algoName}...</div>);
-    const path = result.path; const allEdges = edgesRef.current.get();
-    for (let i = 0; i < path.length; i++) {
-        const nodeId = path[i];
-        nodesRef.current.update({ id: nodeId, color: { background: "#fee2e2", border: "#ef4444" }, borderWidth: 4 });
-        await sleep(400);
-        if (i < path.length - 1) {
-            const nextNodeId = path[i+1];
-            const edge = allEdges.find((e: any) => 
-                 (String(e.from) === nodeId && String(e.to) === nextNodeId) ||
-                 (!isDirected && String(e.from) === nextNodeId && String(e.to) === nodeId)
-            );
-            if (edge) { edgesRef.current.update({ id: edge.id, color: { color: "#ef4444" }, width: 4 }); await sleep(400); }
+    // 4. CHECK BIPARTITE - Chỉ Vô Hướng
+    else if (selectedAlgo === 'bipartite') {
+        if (isDirected) {
+            Toastify({ text: "⚠️ Thường dùng cho đồ thị VÔ HƯỚNG!", backgroundColor: "#f59e0b" }).showToast();
+            setIsRunning(false); return;
+        }
+        setResultLog("🔍 Checking Bipartite..."); await sleep(500);
+        const res = checkBipartite(adjList);
+        if (res.isBipartite) {
+            res.setA.forEach(id => nodesRef.current.update({ id, color: { background: "#fca5a5", border: "#dc2626" } })); // Red set
+            res.setB.forEach(id => nodesRef.current.update({ id, color: { background: "#93c5fd", border: "#2563eb" } })); // Blue set
+            setResultLog(<div>✅ <b>Đồ thị 2 phía</b> (Bipartite)</div>);
+        } else {
+            setResultLog(<div className="error-text">❌ Không phải 2 phía<br/>Conflict: {res.conflictNode}</div>);
+            if(res.conflictNode) nodesRef.current.update({ id: res.conflictNode, color: { background: "#000", border: "red" } });
         }
     }
-    setResultLog(<div>✅ <b>{algoName} XONG</b><br/>Cost: {result.cost}<br/>Path: {path.join('->')}</div>);
+
+    // 5. EULER - Tự động tìm Start
+    else if (selectedAlgo === 'fleury' || selectedAlgo === 'hierholzer') {
+        const res = selectedAlgo === 'fleury' ? fleury(adjList, isDirected) : hierholzer(adjList, isDirected);
+        if (res.error) setResultLog(<span className="error-text">{res.error}</span>);
+        else {
+            setResultLog(<div>🚀 Euler Path ({res.type})...</div>);
+            const path = res.path;
+            for(let i=0; i<path.length; i++) {
+                nodesRef.current.update({ id: path[i], ...pathStyle.node }); await sleep(300);
+                if(i < path.length-1) await highlightEdge(path[i], path[i+1], pathStyle);
+            }
+            setResultLog(<div>✅ <b>Euler Found</b><br/>{path.join(" ➔ ")}</div>);
+        }
+    }
+
+    // 6. MAX FLOW (FORD-FULKERSON) - Chỉ Có Hướng
+    else if (selectedAlgo === 'fordfulkerson') {
+         if (!isDirected) { Toastify({ text: "⛔ Max Flow cần đồ thị CÓ HƯỚNG!", backgroundColor: "#ef4444" }).showToast(); setIsRunning(false); return; }
+         if(!sNode || !eNode) { Toastify({ text: "Nhập Start & End!", backgroundColor: "#f59e0b" }).showToast(); setIsRunning(false); return; }
+
+         const res = fordFulkerson(adjList, sNode, eNode);
+         if (res.error) setResultLog(<span className="error-text">{res.error}</span>);
+         else {
+             setResultLog(<div>🚀 Calculating Max Flow...</div>); await sleep(500);
+             for(const fe of res.flowEdges) {
+                const visEdge = allEdges.find((e:any) => String(e.from)===fe.from && String(e.to)===fe.to);
+                if(visEdge) {
+                    const capacity = visEdge.weight || 0;
+                    edgesRef.current.update({ 
+                        id: visEdge.id, 
+                        label: `${fe.flow}/${capacity}`, // Label: Flow/Cap
+                        ...flowStyle.edge 
+                    });
+                    await sleep(200);
+                }
+            }
+            setResultLog(<div>✅ <b>Max Flow: {res.maxFlow}</b></div>);
+         }
+    }
+
     setIsRunning(false);
   };
 
@@ -354,82 +387,106 @@ const App: React.FC = () => {
       <aside className="sidebar">
         <div className="brand"><i className="fa-solid fa-share-nodes"></i> Graph Algo</div>
         <div className="panel">
-          
-          <div style={{marginBottom: 15, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer'}} onClick={() => setIsDirected(!isDirected)}>
-              <div style={{width: 40, height: 20, background: isDirected ? '#4f46e5' : '#cbd5e1', borderRadius: 20, position: 'relative', transition: '0.2s'}}>
-                  <div style={{width: 16, height: 16, background: 'white', borderRadius: '50%', position: 'absolute', top: 2, left: isDirected ? 22 : 2, transition: '0.2s'}}></div>
-              </div>
-              <span style={{fontWeight: 'bold', fontSize: '0.9rem'}}>{isDirected ? 'Đồ thị Có hướng' : 'Đồ thị Vô hướng'}</span>
-          </div>
-
           <h3>Thuật toán</h3>
-          <select className="custom-select" value={selectedAlgo} onChange={(e) => setSelectedAlgo(e.target.value as AlgoType)} style={{width:'100%', padding:'10px', marginBottom:10}}>
-             <option value="dijkstra">Dijkstra</option>
-             <option value="bfs">BFS</option>
-             <option value="dfs">DFS</option>
-             <option value="bipartite">Check Bipartite</option>
+          <select className="custom-select" value={selectedAlgo} onChange={(e) => setSelectedAlgo(e.target.value as AlgoType)}>
+             <option value="dijkstra">Dijkstra (Shortest Path)</option>
+             <option value="bfs">BFS (Traversal)</option>
+             <option value="dfs">DFS (Traversal)</option>
+             <option disabled>──────────</option>
              <option value="prim">Prim (MST)</option>
              <option value="kruskal">Kruskal (MST)</option>
+             <option value="bipartite">Check Bipartite</option>
              <option disabled>──────────</option>
              <option value="fordfulkerson">Ford-Fulkerson (Max Flow)</option>
-             <option value="fleury">Fleury (Euler Cycle)</option>
-             <option value="hierholzer">Hierholzer (Euler Cycle)</option>
+             <option value="fleury">Fleury (Euler)</option>
+             <option value="hierholzer">Hierholzer (Euler)</option>
           </select>
 
-          {['dijkstra','bfs','dfs','fordfulkerson'].includes(selectedAlgo) && (
-            <div className="input-row">
-                <input type="text" placeholder="Start" value={startNode} onChange={e => setStartNode(e.target.value)} />
-                <i className="fa-solid fa-arrow-right"></i>
-                <input type="text" placeholder="End" value={endNode} onChange={e => setEndNode(e.target.value)} />
+          {/* INPUT AREA: HIỂN THỊ CÓ ĐIỀU KIỆN */}
+          <div className="input-row">
+             {/* Chỉ hiện Start Node cho các thuật toán cần điểm bắt đầu thủ công */}
+             {['dijkstra','bfs','dfs','fordfulkerson'].includes(selectedAlgo) && (
+                <input type="text" placeholder="Start" value={startNode} onChange={e => setStartNode(e.target.value)} title="Start Node"/>
+             )}
+
+             {/* Chỉ hiện End Node cho tìm đường và luồng */}
+             {['dijkstra','fordfulkerson'].includes(selectedAlgo) && (
+                <>
+                    <i className="fa-solid fa-arrow-right" style={{color: '#94a3b8', margin: '0 5px'}}></i>
+                    <input type="text" placeholder="End" value={endNode} onChange={e => setEndNode(e.target.value)} title="End Node"/>
+                </>
+             )}
+          </div>
+
+          {/* Thông báo nhỏ cho Euler */}
+          {['fleury', 'hierholzer'].includes(selectedAlgo) && (
+            <div style={{fontSize: '0.8rem', color: '#64748b', textAlign: 'center', marginBottom: 10, fontStyle: 'italic'}}>
+                *Tự động tìm điểm bắt đầu
             </div>
           )}
           
           <button className="btn-primary" onClick={handleRun} disabled={isRunning}>
-             {isRunning ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-play"></i>} {isRunning ? '...' : ' CHẠY'}
+             {isRunning ? <i className="fa-solid fa-spinner fa-spin"></i> : <i className="fa-solid fa-play"></i>} {isRunning ? 'RUNNING...' : 'CHẠY'}
           </button>
           
-          <button className="btn-secondary" style={{marginTop: 10, width: '100%'}} onClick={handleShowRep}>
-             <i className="fa-solid fa-code"></i> Xem Biểu Diễn
-          </button>
-          
-          <button className="btn-secondary" style={{marginTop: 5, width: '100%'}} onClick={handleClearGraph} disabled={isRunning}>
-             Reset
-          </button>
+          <button className="btn-secondary" onClick={handleShowRep}><i className="fa-solid fa-code"></i> Code Representation</button>
+          <button className="btn-secondary" onClick={handleClear} disabled={isRunning}>Reset Graph</button>
         </div>
-        <div className="log-box">{resultLog}</div>
       </aside>
 
-      <main className="canvas-area">
-        <div id="graph-container" ref={containerRef}></div>
-        <div className="floating-toolbar">
-           <button className={`tool-btn ${activeTool === 'cursor' ? 'active' : ''}`} onClick={() => setActiveTool('cursor')}><i className="fa-solid fa-arrow-pointer"></i></button>
-           <button className={`tool-btn ${activeTool === 'add-node' ? 'active' : ''}`} onClick={() => setActiveTool('add-node')}><i className="fa-solid fa-plus"></i></button>
-           <button className={`tool-btn ${activeTool === 'add-edge' ? 'active' : ''}`} onClick={() => setActiveTool('add-edge')}><i className="fa-solid fa-bezier-curve"></i></button>
-           <button className={`tool-btn ${activeTool === 'edit' ? 'active' : ''}`} onClick={() => setActiveTool('edit')}><i className="fa-solid fa-pen-to-square"></i></button>
-           <button className={`tool-btn ${activeTool === 'delete' ? 'active' : ''}`} onClick={() => setActiveTool('delete')}><i className="fa-solid fa-eraser"></i></button>
-        </div>
-      </main>
-
+      <div className="main-content">
+          <div className="canvas-area">
+              <div id="graph-container" ref={containerRef}></div>
+              
+              <div className="floating-toolbar">
+                 {/* MODE SWITCHER */}
+                 <div className="mode-switch-container">
+                    <div className="mode-bg-slider" style={{ transform: isDirected ? 'translateX(100%)' : 'translateX(0)' }}></div>
+                    <div className={`mode-option ${!isDirected ? 'active' : ''}`} onClick={() => handleSwitchMode(false)}>Vô hướng</div>
+                    <div className={`mode-option ${isDirected ? 'active' : ''}`} onClick={() => handleSwitchMode(true)}>Có hướng</div>
+                 </div>
+                 <div className="toolbar-divider"></div>
+                 {/* TOOL BUTTONS */}
+                 <div className="tools-group">
+                    <button className={`tool-btn ${activeTool === 'cursor' ? 'active' : ''}`} onClick={() => setActiveTool('cursor')} title="Di chuyển"><i className="fa-solid fa-arrow-pointer"></i></button>
+                    <button className={`tool-btn ${activeTool === 'add-node' ? 'active' : ''}`} onClick={() => setActiveTool('add-node')} title="Thêm Đỉnh"><i className="fa-solid fa-plus"></i></button>
+                    <button className={`tool-btn ${activeTool === 'add-edge' ? 'active' : ''}`} onClick={() => setActiveTool('add-edge')} title="Nối Cạnh"><i className="fa-solid fa-bezier-curve"></i></button>
+                    <button className={`tool-btn ${activeTool === 'edit' ? 'active' : ''}`} onClick={() => setActiveTool('edit')} title="Sửa Trọng Số"><i className="fa-solid fa-pen-to-square"></i></button>
+                    <button className={`tool-btn ${activeTool === 'delete' ? 'active' : ''}`} onClick={() => setActiveTool('delete')} title="Xóa"><i className="fa-solid fa-eraser"></i></button>
+                 </div>
+              </div>
+          </div>
+          <div className="bottom-log-panel" ref={bottomLogRef}>
+              <div className="log-header">Console Output</div>
+              {resultLog}
+          </div>
+      </div>
+      
+      {/* MODAL EDIT WEIGHT */}
       {modalOpen && (
         <div className="modal-overlay">
           <div className="modal-content">
-            <h3>Nhập Trọng số</h3>
-            <input ref={inputWeightRef} type="number" value={inputWeight} onChange={e => setInputWeight(parseInt(e.target.value))} min="1" onKeyDown={e => e.key === 'Enter' && handleSaveEdge()}/>
-            <div className="modal-actions"><button className="btn-primary" onClick={handleSaveEdge}>Lưu</button><button className="btn-secondary" onClick={handleCancelEdge}>Hủy</button></div>
+            <h3>Sửa Trọng số</h3>
+            <input ref={inputWeightRef} type="number" value={inputWeight} onChange={e => setInputWeight(parseInt(e.target.value) || 0)} min="0" onKeyDown={e => e.key === 'Enter' && handleSaveWeight()}/>
+            <div className="modal-actions">
+                <div className="modal-row"><button className="btn-danger" onClick={handleNoWeight}>Không trọng số</button><button className="btn-primary" onClick={handleSaveWeight}>Lưu</button></div>
+                <button className="btn-secondary" style={{width: '100%', marginTop: 5}} onClick={() => setModalOpen(false)}>Hủy</button>
+            </div>
           </div>
         </div>
       )}
 
+      {/* MODAL CODE REPRESENTATION */}
       {repModalOpen && (
         <div className="modal-overlay" onClick={() => setRepModalOpen(false)}>
            <div className="modal-content" style={{width: 600, textAlign: 'left'}} onClick={e => e.stopPropagation()}>
-             <h3>Biểu Diễn Đồ Thị ({isDirected ? 'Có hướng' : 'Vô hướng'})</h3>
-             <div style={{maxHeight: 400, overflowY: 'auto', background: '#f1f5f9', padding: 10, borderRadius: 8}}>
-                 <h4>1. Ma Trận Kề:</h4><pre style={{fontSize: 12}}>{representations.matrixStr}</pre>
-                 <h4>2. Danh Sách Kề:</h4><pre style={{fontSize: 12}}>{representations.adjListStr}</pre>
-                 <h4>3. Danh Sách Cạnh:</h4><pre style={{fontSize: 12}}>{representations.edgeListStr}</pre>
-             </div>
-             <div className="modal-actions" style={{marginTop: 15}}><button className="btn-secondary" onClick={() => setRepModalOpen(false)}>Đóng</button></div>
+              <h3>Biểu Diễn Đồ Thị</h3>
+              <div style={{maxHeight: 400, overflowY: 'auto', background: '#f1f5f9', padding: 10, borderRadius: 8}}>
+                  <h4>Matrix:</h4><pre style={{fontSize: 12}}>{representations.matrixStr}</pre>
+                  <h4>Adj List:</h4><pre style={{fontSize: 12}}>{representations.adjListStr}</pre>
+                  <h4>Edge List:</h4><pre style={{fontSize: 12}}>{representations.edgeListStr}</pre>
+              </div>
+              <div className="modal-actions" style={{marginTop: 15}}><button className="btn-secondary" onClick={() => setRepModalOpen(false)}>Đóng</button></div>
            </div>
         </div>
       )}

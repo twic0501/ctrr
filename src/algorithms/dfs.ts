@@ -1,62 +1,42 @@
 // src/algorithms/dfs.ts
 
-export function dfs(adjList: any, start: string, end: string) {
-  console.log(`running DFS from ${start} to ${end}`);
+export interface DFSResult {
+  visitedOrder: string[];
+  previous: Record<string, string | null>;
+  error?: string;
+}
 
-  if (!adjList[start]) return { error: `Không tìm thấy điểm ${start}` };
-  if (!adjList[end]) return { error: `Không tìm thấy điểm ${end}` };
+export function dfs(adjList: any, start: string): DFSResult {
+  if (!adjList[start]) return { visitedOrder: [], previous: {}, error: `❌ Không tìm thấy điểm bắt đầu "${start}"` };
 
   const stack: string[] = [start];
   const visited = new Set<string>();
   const previous: Record<string, string | null> = {};
+  const visitedOrder: string[] = [];
 
-  // Khởi tạo
   previous[start] = null;
-  
-  let found = false;
   let safety = 0;
 
   while (stack.length > 0) {
-    safety++;
-    if (safety > 5000) return { error: "Lỗi vòng lặp!" };
-
-    const u = stack.pop()!; // Lấy từ đỉnh ngăn xếp
+    if (++safety > 5000) return { visitedOrder: [], previous: {}, error: "Lỗi vòng lặp!" };
+    
+    const u = stack.pop()!;
 
     if (!visited.has(u)) {
       visited.add(u);
-
-      if (u === end) {
-        found = true;
-        break;
-      }
+      visitedOrder.push(u);
 
       const neighbors = adjList[u] || [];
-      // Đảo ngược thứ tự để DFS duyệt theo thứ tự trực quan hơn khi dùng Stack
-      // (Không bắt buộc, nhưng giúp thứ tự duyệt giống recursion hơn)
+      // Đảo ngược mảng neighbors để khi push vào stack, phần tử đầu tiên được lấy ra trước
       for (let i = neighbors.length - 1; i >= 0; i--) {
-        const [v, _weight] = neighbors[i];
+        const [v] = neighbors[i]; // Đã sửa lỗi cú pháp 'of' thành '='
         if (!visited.has(v)) {
-          // Lưu ý: Trong DFS, ta ghi nhận cha (previous) ngay khi đẩy vào stack 
-          // để có đường đi duy nhất, mặc dù logic này đơn giản hóa so với DFS chuẩn.
-          if (!previous[v]) previous[v] = u; 
-          stack.push(v);
+           if (!previous[v]) previous[v] = u; // Ghi nhận cha
+           stack.push(v);
         }
       }
     }
   }
 
-  if (!found) return { path: [], cost: 0 };
-
-  // Truy vết
-  const path: string[] = [];
-  let curr: string | null = end;
-  // Giới hạn while để tránh loop vô tận nếu đồ thị có chu trình phức tạp
-  let check = 0;
-  while (curr && check < 1000) {
-    path.unshift(curr);
-    curr = previous[curr];
-    check++;
-  }
-
-  return { path, cost: path.length - 1 };
+  return { visitedOrder, previous };
 }

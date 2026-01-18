@@ -1,52 +1,39 @@
 // src/algorithms/bfs.ts
 
-export function bfs(adjList: any, start: string, end: string) {
-  console.log(`running BFS from ${start} to ${end}`);
+export interface BFSResult {
+  visitedOrder: string[]; // Thứ tự các đỉnh được duyệt
+  previous: Record<string, string | null>; // Để vẽ cây BFS (mũi tên từ cha sang con)
+  error?: string;
+}
 
-  if (!adjList[start]) return { error: `Không tìm thấy điểm ${start}` };
-  if (!adjList[end]) return { error: `Không tìm thấy điểm ${end}` };
+export function bfs(adjList: any, start: string): BFSResult {
+  if (!adjList[start]) return { visitedOrder: [], previous: {}, error: `❌ Không tìm thấy điểm bắt đầu "${start}"` };
 
   const queue: string[] = [start];
   const visited = new Set<string>();
   const previous: Record<string, string | null> = {};
-  
+  const visitedOrder: string[] = []; 
+
   visited.add(start);
   previous[start] = null;
 
-  let found = false;
   let safety = 0;
 
   while (queue.length > 0) {
-    safety++;
-    if(safety > 5000) return { error: "Lỗi vòng lặp!" };
-
-    const u = queue.shift()!; // Lấy đầu hàng đợi
-
-    if (u === end) {
-      found = true;
-      break;
-    }
+    if (++safety > 5000) return { visitedOrder: [], previous: {}, error: "Lỗi vòng lặp!" };
+    
+    const u = queue.shift()!;
+    visitedOrder.push(u);
 
     const neighbors = adjList[u] || [];
-    for (const [v, _weight] of neighbors) {
+    for (const [v] of neighbors) {
       if (!visited.has(v)) {
         visited.add(v);
-        previous[v] = u; // Lưu vết: v được đi tới từ u
+        previous[v] = u; // Ghi nhận cha để vẽ cạnh cây BFS
         queue.push(v);
       }
     }
   }
 
-  if (!found) return { path: [], cost: 0 };
-
-  // Truy vết đường đi
-  const path: string[] = [];
-  let curr: string | null = end;
-  while (curr) {
-    path.unshift(curr);
-    curr = previous[curr];
-  }
-
-  // Cost của BFS tính bằng số bước (số cạnh)
-  return { path, cost: path.length - 1 };
+  return { visitedOrder, previous };
 }
