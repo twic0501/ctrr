@@ -25,16 +25,18 @@ const App: React.FC = () => {
   const containerRef = useRef<HTMLDivElement>(null);
   const networkRef = useRef<Network | null>(null);
   
+  // FIX 1: Thêm "as any" để tránh lỗi overload Type
   const nodesRef = useRef<any>(new DataSet([
     { id: '1', label: '1', x: -100, y: 0 }, 
     { id: '2', label: '2', x: 100, y: 0 }, 
     { id: '3', label: '3', x: 0, y: 100 }
-  ]));
+  ] as any));
+
   const edgesRef = useRef<any>(new DataSet([
     { from: '1', to: '2', label: '10', weight: 10 },
     { from: '2', to: '3', label: '5', weight: 5 },
     { from: '1', to: '3', label: '15', weight: 15 }
-  ]));
+  ] as any));
 
   const edgeCallbackRef = useRef<any>(null);
   const activeToolRef = useRef<ToolMode>('cursor'); 
@@ -76,7 +78,8 @@ const App: React.FC = () => {
         font: { align: "top", size: 16, color: "#4f46e5", strokeWidth: 3, strokeColor: "#ffffff" },
         // Khởi tạo mũi tên dựa trên state ban đầu luôn
         arrows: { to: { enabled: isDirected } },
-        smooth: { type: isDirected ? 'curvedCW' : 'continuous', roundness: 0.2 }
+        // FIX 2: Thêm enabled: true
+        smooth: { enabled: true, type: isDirected ? 'curvedCW' : 'continuous', roundness: 0.2 }
       },
       physics: false, 
       interaction: { hover: true, dragNodes: true, dragView: true, zoomView: true, selectConnectedEdges: false },
@@ -110,7 +113,8 @@ const App: React.FC = () => {
         }
       }
     };
-    const net = new Network(containerRef.current, { nodes: nodesRef.current, edges: edgesRef.current }, options);
+    // FIX 1: cast nodes/edges as any
+    const net = new Network(containerRef.current, { nodes: nodesRef.current, edges: edgesRef.current } as any, options);
     networkRef.current = net;
     
     net.on("click", (params) => {
@@ -141,7 +145,8 @@ const App: React.FC = () => {
           networkRef.current.setOptions({
               edges: {
                   arrows: { to: { enabled: isDirected } }, 
-                  smooth: { type: isDirected ? 'curvedCW' : 'continuous', roundness: 0.2 } 
+                  // FIX 2: Thêm enabled: true vào update
+                  smooth: { enabled: true, type: isDirected ? 'curvedCW' : 'continuous', roundness: 0.2 } 
               }
           });
       }
@@ -203,7 +208,8 @@ const App: React.FC = () => {
     if (nodesRef.current.length === 0) { Toastify({ text: "Đồ thị trống!", backgroundColor: "#ef4444" }).showToast(); return; }
 
     const adjList: any = {};
-    const nodesArr = nodesRef.current.getIds();
+    // FIX 3: Xóa biến nodesArr chưa dùng (hoặc để đó nhưng ko dùng cũng ko sao, nhưng xóa cho sạch)
+    // const nodesArr = nodesRef.current.getIds(); 
     nodesRef.current.forEach((n: any) => { adjList[String(n.id)] = []; });
     const edgesArr: any[] = [];
     
@@ -417,13 +423,13 @@ const App: React.FC = () => {
       {repModalOpen && (
         <div className="modal-overlay" onClick={() => setRepModalOpen(false)}>
            <div className="modal-content" style={{width: 600, textAlign: 'left'}} onClick={e => e.stopPropagation()}>
-              <h3>Biểu Diễn Đồ Thị ({isDirected ? 'Có hướng' : 'Vô hướng'})</h3>
-              <div style={{maxHeight: 400, overflowY: 'auto', background: '#f1f5f9', padding: 10, borderRadius: 8}}>
-                  <h4>1. Ma Trận Kề:</h4><pre style={{fontSize: 12}}>{representations.matrixStr}</pre>
-                  <h4>2. Danh Sách Kề:</h4><pre style={{fontSize: 12}}>{representations.adjListStr}</pre>
-                  <h4>3. Danh Sách Cạnh:</h4><pre style={{fontSize: 12}}>{representations.edgeListStr}</pre>
-              </div>
-              <div className="modal-actions" style={{marginTop: 15}}><button className="btn-secondary" onClick={() => setRepModalOpen(false)}>Đóng</button></div>
+             <h3>Biểu Diễn Đồ Thị ({isDirected ? 'Có hướng' : 'Vô hướng'})</h3>
+             <div style={{maxHeight: 400, overflowY: 'auto', background: '#f1f5f9', padding: 10, borderRadius: 8}}>
+                 <h4>1. Ma Trận Kề:</h4><pre style={{fontSize: 12}}>{representations.matrixStr}</pre>
+                 <h4>2. Danh Sách Kề:</h4><pre style={{fontSize: 12}}>{representations.adjListStr}</pre>
+                 <h4>3. Danh Sách Cạnh:</h4><pre style={{fontSize: 12}}>{representations.edgeListStr}</pre>
+             </div>
+             <div className="modal-actions" style={{marginTop: 15}}><button className="btn-secondary" onClick={() => setRepModalOpen(false)}>Đóng</button></div>
            </div>
         </div>
       )}

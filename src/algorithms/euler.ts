@@ -3,7 +3,8 @@
 // --- HELPER: Kiểm tra điều kiện Euler ---
 function checkEulerCondition(adjList: any, isDirected: boolean) {
   let oddDegreeCount = 0;
-  let startNode = null;
+  // FIX: Định nghĩa rõ kiểu cho startNode
+  let startNode: string | null = null;
   let inDegree: Record<string, number> = {};
   let outDegree: Record<string, number> = {};
 
@@ -29,7 +30,7 @@ function checkEulerCondition(adjList: any, isDirected: boolean) {
     }
     // Euler Circuit: 0 đỉnh lẻ. Euler Path: 2 đỉnh lẻ.
     if (oddDegreeCount === 0) return { isValid: true, startNode: nodes[0], type: 'Circuit' };
-    if (oddDegreeCount === 2) return { isValid: true, startNode: startNode, type: 'Path' };
+    if (oddDegreeCount === 2) return { isValid: true, startNode: startNode!, type: 'Path' };
     return { isValid: false, error: `Vô hướng: Có ${oddDegreeCount} đỉnh bậc lẻ (Chỉ cho phép 0 hoặc 2)` };
   } else {
     // Có hướng: Check In/Out degree
@@ -43,7 +44,7 @@ function checkEulerCondition(adjList: any, isDirected: boolean) {
     }
     
     if (startNodes === 0 && endNodes === 0) return { isValid: true, startNode: nodes[0], type: 'Circuit' };
-    if (startNodes === 1 && endNodes === 1) return { isValid: true, startNode: startNode, type: 'Path' };
+    if (startNodes === 1 && endNodes === 1) return { isValid: true, startNode: startNode!, type: 'Path' };
     return { isValid: false, error: "Có hướng: Không thỏa mãn điều kiện Euler" };
   }
 }
@@ -60,7 +61,7 @@ export function fleury(adjListInput: any, isDirected: boolean) {
   if (!check.isValid) return { error: check.error };
 
   const path: string[] = [];
-  let curr = check.startNode;
+  let curr = check.startNode!; // Thêm ! vì chắc chắn có giá trị nếu isValid = true
   path.push(curr);
 
   // Helper: Đếm số đỉnh có thể đến được (BFS) để kiểm tra cầu
@@ -80,8 +81,10 @@ export function fleury(adjListInput: any, isDirected: boolean) {
 
   // Helper: Xóa cạnh
   const removeEdge = (u: string, v: string) => {
-    adjList[u] = adjList[u].filter((edge: any) => edge[0] !== v);
-    if (!isDirected) {
+    if (adjList[u]) {
+      adjList[u] = adjList[u].filter((edge: any) => edge[0] !== v);
+    }
+    if (!isDirected && adjList[v]) {
       adjList[v] = adjList[v].filter((edge: any) => edge[0] !== u);
     }
   };
@@ -96,7 +99,8 @@ export function fleury(adjListInput: any, isDirected: boolean) {
     if (!adjList[curr] || adjList[curr].length === 0) break;
 
     const neighbors = adjList[curr];
-    let chosenV = -1;
+    // FIX: Đổi kiểu từ số (-1) sang string | null
+    let chosenV: string | null = null; 
 
     if (neighbors.length === 1) {
         // Chỉ có 1 đường, bắt buộc đi
@@ -111,8 +115,12 @@ export function fleury(adjListInput: any, isDirected: boolean) {
             const countAfter = countReachable(curr, adjList);
             
             // Hoàn tác xóa để thử tiếp
+            if (!adjList[curr]) adjList[curr] = [];
             adjList[curr].push([v, 1]); // Weight giả
-            if (!isDirected) adjList[v].push([curr, 1]);
+            if (!isDirected) {
+                 if (!adjList[v]) adjList[v] = [];
+                 adjList[v].push([curr, 1]);
+            }
 
             if (countBefore === countAfter) {
                 chosenV = v; // Không phải cầu -> Đi luôn
@@ -120,13 +128,13 @@ export function fleury(adjListInput: any, isDirected: boolean) {
             }
         }
         // Nếu tất cả đều là cầu, chọn đại cái đầu
-        if (chosenV === -1) chosenV = neighbors[0][0];
+        if (chosenV === null) chosenV = neighbors[0][0];
     }
 
-    // Đi thật
-    removeEdge(curr, chosenV);
+    // Đi thật (Dùng ! vì logic đảm bảo chosenV ko null)
+    removeEdge(curr, chosenV!);
     edgeCount--;
-    curr = chosenV;
+    curr = chosenV!;
     path.push(curr);
   }
 
@@ -145,7 +153,7 @@ export function hierholzer(adjListInput: any, isDirected: boolean) {
 
   const circuit: string[] = []; // Kết quả cuối cùng
   const stack: string[] = [];   // Stack tạm
-  let curr = check.startNode;
+  let curr = check.startNode!;
   
   stack.push(curr);
 
@@ -158,7 +166,7 @@ export function hierholzer(adjListInput: any, isDirected: boolean) {
         const next = nextEdge[0];
 
         // Nếu vô hướng, phải xóa cả chiều ngược lại
-        if (!isDirected) {
+        if (!isDirected && adjList[next]) {
              const index = adjList[next].findIndex((e:any) => e[0] === curr);
              if(index !== -1) adjList[next].splice(index, 1);
         }
@@ -167,6 +175,7 @@ export function hierholzer(adjListInput: any, isDirected: boolean) {
     } else {
         // Hết đường đi, quay lui (backtrack) và ghi vào kết quả
         circuit.push(curr);
+        // FIX: Thêm ! vì stack.length > 0 nên pop() không bao giờ undefined
         curr = stack.pop()!;
     }
   }
